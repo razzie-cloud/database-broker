@@ -12,9 +12,8 @@ import (
 )
 
 var (
-	ErrAdapterNotFound      = newError("adapter not found").WithStatusCode(http.StatusNotFound)
-	ErrAdapterAlreadyExists = newError("adapter already exists").WithStatusCode(http.StatusConflict)
-	ErrInvalidInstanceName  = newError("invalid instance name").WithStatusCode(http.StatusBadRequest)
+	ErrAdapterNotFound     = newError("adapter not found").WithStatusCode(http.StatusNotFound)
+	ErrInvalidInstanceName = newError("invalid instance name").WithStatusCode(http.StatusBadRequest)
 
 	validInstanceName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 )
