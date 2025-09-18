@@ -2,7 +2,6 @@ package broker
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -11,12 +10,7 @@ import (
 	"github.com/razzie-cloud/database-broker/internal/adapter"
 )
 
-var (
-	ErrAdapterNotFound     = newError("adapter not found").WithStatusCode(http.StatusNotFound)
-	ErrInvalidInstanceName = newError("invalid instance name").WithStatusCode(http.StatusBadRequest)
-
-	validInstanceName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
-)
+var validInstanceName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
 type Interface interface {
 	RegisterAdapter(name string, adapter adapter.Interface)
@@ -53,7 +47,7 @@ func (b *broker) GetInstances(ctx context.Context, adapterName string) ([]string
 	a, ok := b.adapters[adapterName]
 	b.mu.RUnlock()
 	if !ok {
-		return nil, ErrAdapterNotFound
+		return nil, newError("adapter not found: " + adapterName).WithStatusCode(http.StatusNotFound)
 	}
 	return a.GetInstances(ctx)
 }
@@ -61,13 +55,13 @@ func (b *broker) GetInstances(ctx context.Context, adapterName string) ([]string
 func (b *broker) GetOrCreateInstance(ctx context.Context, adapterName, instanceName string) (adapter.Instance, error) {
 	instanceName = strings.ToLower(instanceName)
 	if !validInstanceName.MatchString(instanceName) {
-		return nil, fmt.Errorf("invalid instance name: %s", instanceName)
+		return nil, newError("invalid instance name: " + instanceName).WithStatusCode(http.StatusBadRequest)
 	}
 	b.mu.RLock()
 	a, ok := b.adapters[adapterName]
 	b.mu.RUnlock()
 	if !ok {
-		return nil, ErrAdapterNotFound
+		return nil, newError("adapter not found: " + adapterName).WithStatusCode(http.StatusNotFound)
 	}
 	return a.GetOrCreateInstance(ctx, instanceName)
 }
