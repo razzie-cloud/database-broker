@@ -73,8 +73,8 @@ func (pg *postgresAdapter) GetInstances(ctx context.Context) ([]string, error) {
 
 func (pg *postgresAdapter) GetInstance(ctx context.Context, instanceName string) (adapter.Instance, error) {
 	instance := Instance{
-		DBHost: pg.host,
-		DBPort: pg.port,
+		Host: pg.host,
+		Port: pg.port,
 	}
 	err := pg.repo.Find(ctx, &instance, rel.Eq("instance_name", instanceName))
 	if err != nil {
@@ -103,11 +103,11 @@ func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 		}
 		instance = &Instance{
 			InstanceName: instanceName,
-			DBHost:       pg.host,
-			DBPort:       pg.port,
-			DBName:       dbName,
-			DBUser:       dbUser,
-			DBPassword:   dbPass,
+			Host:         pg.host,
+			Port:         pg.port,
+			Database:     dbName,
+			Username:     dbUser,
+			Password:     dbPass,
 			CreatedAt:    time.Now().UTC(),
 		}
 		if err := pg.repo.Insert(txCtx, instance); err != nil {
