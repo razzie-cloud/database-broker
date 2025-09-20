@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -93,7 +94,7 @@ func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 	dbName := "db_" + instanceName
 	dbUser := "user_" + instanceName + "_" + strings.ToLower(util.RandToken(4))
 	dbPass := util.RandPassword()
-	if err := ensureDatabase(ctx, pg.repo, dbName); err != nil {
+	if err := createDatabase(ctx, pg.repo, dbName); err != nil {
 		return nil, err
 	}
 	err = pg.repo.Transaction(ctx, func(txCtx context.Context) error {
@@ -129,31 +130,18 @@ func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 	return instance, nil
 }
 
-func databaseExists(ctx context.Context, repo rel.Repository, name string) (bool, error) {
-	n, err := repo.Count(ctx, "pg_catalog.pg_database",
-		rel.Where(rel.Eq("datname", name)),
-	)
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
-}
-
 func createDatabase(ctx context.Context, repo rel.Repository, name string) error {
 	sql := fmt.Sprintf("CREATE DATABASE %s", pq.QuoteIdentifier(name))
 	_, _, err := repo.Exec(ctx, sql)
-	return err
-}
-
-func ensureDatabase(ctx context.Context, repo rel.Repository, name string) error {
-	exists, err := databaseExists(ctx, repo, name)
-	if err != nil {
-		return err
-	}
-	if exists {
+	if err == nil {
 		return nil
 	}
-	return createDatabase(ctx, repo, name)
+	const pgErrDuplicateDB = "42P04" // https://www.postgresql.org/docs/current/errcodes-appendix.html
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) && string(pqErr.Code) == pgErrDuplicateDB {
+		return nil
+	}
+	return err
 }
 
 func createUser(ctx context.Context, repo rel.Repository, name, password string) error {
