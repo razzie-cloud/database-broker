@@ -8,14 +8,40 @@ services:
       POSTGRES_DB: broker
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d broker || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    command:
+      - "dragonfly"
+      - "--dbnum=16"
+      - "--requirepass=adminpass"
+      - "--logtostdout"
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "adminpass", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   broker:
     build:
       context: .
     environment:
       POSTGRES_URI: postgres://admin:adminpass@postgres:5432/broker?sslmode=disable
+      DRAGONFLY_URI: redis://:adminpass@dragonfly:6379/0
       SERVER_PORT: 8080
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      dragonfly:
+        condition: service_healthy
     ports:
       - "8080:8080"
