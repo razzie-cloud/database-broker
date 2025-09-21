@@ -10,4 +10,5 @@ type Instance interface {
 type Interface interface {
 	GetInstances(ctx context.Context) ([]string, error)
 	GetOrCreateInstance(ctx context.Context, instanceName string) (Instance, error)
+	Close() error
 }

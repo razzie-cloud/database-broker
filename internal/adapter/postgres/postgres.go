@@ -16,11 +16,6 @@ import (
 	"github.com/lib/pq"
 )
 
-type PostgresAdapter interface {
-	adapter.Interface
-	Close() error
-}
-
 type postgresAdapter struct {
 	adapter rel.Adapter
 	repo    rel.Repository
@@ -28,7 +23,7 @@ type postgresAdapter struct {
 	port    int
 }
 
-func New(postgresUri string) (PostgresAdapter, error) {
+func New(postgresUri string) (adapter.Interface, error) {
 	host, port, err := util.GetURIHostPort(postgresUri, 5432)
 	if err != nil {
 		return nil, fmt.Errorf("parse postgres uri: %w", err)

@@ -13,18 +13,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type DragonflyAdapter interface {
-	adapter.Interface
-	Close() error
-}
-
 type dragonflyAdapter struct {
 	client *redis.Client
 	host   string
 	port   int
 }
 
-func New(dragonflyURI string) (DragonflyAdapter, error) {
+func New(dragonflyURI string) (adapter.Interface, error) {
 	host, port, err := util.GetURIHostPort(dragonflyURI, 5432)
 	if err != nil {
 		return nil, fmt.Errorf("parse dragonfly uri: %w", err)
