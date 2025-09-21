@@ -47,7 +47,7 @@ func (b *broker) GetInstances(ctx context.Context, adapterName string) ([]string
 	a, ok := b.adapters[adapterName]
 	b.mu.RUnlock()
 	if !ok {
-		return nil, newError("adapter not found: " + adapterName).WithStatusCode(http.StatusNotFound)
+		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
 	}
 	return a.GetInstances(ctx)
 }
@@ -55,13 +55,13 @@ func (b *broker) GetInstances(ctx context.Context, adapterName string) ([]string
 func (b *broker) GetOrCreateInstance(ctx context.Context, adapterName, instanceName string) (adapter.Instance, error) {
 	instanceName = strings.ToLower(instanceName)
 	if !validInstanceName.MatchString(instanceName) {
-		return nil, newError("invalid instance name: " + instanceName).WithStatusCode(http.StatusBadRequest)
+		return nil, newError("invalid instance name: %s", instanceName).WithStatusCode(http.StatusUnprocessableEntity)
 	}
 	b.mu.RLock()
 	a, ok := b.adapters[adapterName]
 	b.mu.RUnlock()
 	if !ok {
-		return nil, newError("adapter not found: " + adapterName).WithStatusCode(http.StatusNotFound)
+		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
 	}
 	return a.GetOrCreateInstance(ctx, instanceName)
 }
