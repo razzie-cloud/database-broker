@@ -77,15 +77,15 @@ func (d *dragonflyAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 	if err != nil {
 		return nil, fmt.Errorf("marshal instance data: %w", err)
 	}
+	if err := d.createUser(ctx, user, pass, ns); err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
 	ok, err := d.client.SetNX(ctx, "instance:"+instanceName, string(data), 0).Result()
 	if err != nil {
 		return nil, fmt.Errorf("save instance data: %w", err)
 	}
 	if !ok {
 		return d.getInstance(ctx, instanceName)
-	}
-	if err := d.createUser(ctx, user, pass, ns); err != nil {
-		return nil, fmt.Errorf("create user: %w", err)
 	}
 	return instance, nil
 }
@@ -119,10 +119,10 @@ func (d *dragonflyAdapter) unmarshalInstance(instanceName, data string) (*Instan
 func (d *dragonflyAdapter) createUser(ctx context.Context, username, password, namespace string) error {
 	return d.client.Do(ctx, "ACL",
 		"SETUSER", username,
-		"NAMESPACE", namespace,
+		"NAMESPACE:"+namespace,
 		"ON",
-		"RESETPASS", ">"+password,
+		">"+password,
 		"+@all", "-@admin", "-ACL", "-CONFIG", "-MODULE", "-CLUSTER",
-		"::"+namespace,
+		"~*",
 	).Err()
 }
