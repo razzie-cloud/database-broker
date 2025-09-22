@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter"
@@ -51,6 +53,7 @@ type InstanceResponse struct {
 }
 
 func buildConnURI(host string, port int, db, user, pass string) string {
-	escUser := url.UserPassword(user, pass).String()
-	return fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=prefer", escUser, host, port, db)
+	userpass := url.UserPassword(user, pass).String()
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	return fmt.Sprintf("postgres://%s@%s/%s?sslmode=prefer", userpass, addr, db)
 }

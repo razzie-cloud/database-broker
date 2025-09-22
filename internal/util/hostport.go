@@ -1,6 +1,7 @@
 package util
 
 import (
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -11,11 +12,14 @@ func GetURIHostPort(uri string, defaultPort int) (string, int, error) {
 	if err != nil {
 		return "", 0, err
 	}
-	if strings.Contains(u.Host, ":") {
-		parts := strings.Split(u.Host, ":")
-		host := parts[0]
-		port, err := strconv.Atoi(parts[1])
-		return host, port, err
+	host := u.Host
+	if host == "" {
+		return "", 0, nil
 	}
-	return u.Host, defaultPort, nil
+	h, p, err := net.SplitHostPort(host)
+	if err == nil {
+		port, err := strconv.Atoi(p)
+		return h, port, err
+	}
+	return strings.Trim(host, "[]"), defaultPort, nil
 }

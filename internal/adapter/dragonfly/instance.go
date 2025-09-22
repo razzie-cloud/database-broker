@@ -2,7 +2,9 @@ package dragonfly
 
 import (
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter"
@@ -50,6 +52,7 @@ type InstanceResponse struct {
 }
 
 func buildConnURI(host string, port int, user, pass string) string {
-	escUser := url.UserPassword(user, pass).String()
-	return fmt.Sprintf("redis://%s@%s:%d/0", escUser, host, port)
+	userpass := url.UserPassword(user, pass).String()
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	return fmt.Sprintf("redis://%s@%s/0", userpass, addr)
 }
