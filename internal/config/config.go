@@ -8,8 +8,8 @@ import (
 
 type Config struct {
 	ServicePort  int    `envconfig:"SERVICE_PORT" default:"8080"`
-	PostgresURI  string `envconfig:"POSTGRES_URI" required:"true"`
-	DragonflyURI string `envconfig:"DRAGONFLY_URI" required:"true"`
+	PostgresURI  string `envconfig:"POSTGRES_URI"`
+	DragonflyURI string `envconfig:"DRAGONFLY_URI"`
 }
 
 func Load() *Config {

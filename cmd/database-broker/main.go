@@ -14,22 +14,27 @@ import (
 
 func main() {
 	cfg := config.Load()
-
-	p, err := postgres.New(cfg.PostgresURI)
-	if err != nil {
-		log.Fatal("Failed to connect to Postgres: ", err)
-	}
-	defer p.Close()
-
-	d, err := dragonfly.New(cfg.DragonflyURI)
-	if err != nil {
-		log.Fatal("Failed to connect to Dragonfly: ", err)
-	}
-	defer d.Close()
-
 	b := broker.New()
-	b.RegisterAdapter("postgres", p)
-	b.RegisterAdapter("redis", d)
+
+	if cfg.PostgresURI != "" {
+		log.Println("Registering Postgres adapter")
+		p, err := postgres.New(cfg.PostgresURI)
+		if err != nil {
+			log.Fatal("Failed to connect to Postgres: ", err)
+		}
+		defer p.Close()
+		b.RegisterAdapter("postgres", p)
+	}
+
+	if cfg.DragonflyURI != "" {
+		log.Println("Registering Dragonfly adapter")
+		d, err := dragonfly.New(cfg.DragonflyURI)
+		if err != nil {
+			log.Fatal("Failed to connect to Dragonfly: ", err)
+		}
+		defer d.Close()
+		b.RegisterAdapter("redis", d)
+	}
 
 	r := router.New(b)
 	addr := fmt.Sprintf(":%d", cfg.ServicePort)
