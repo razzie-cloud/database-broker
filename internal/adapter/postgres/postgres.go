@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/go-rel/postgres"
 	"github.com/go-rel/rel"
-	"github.com/lib/pq"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type postgresAdapter struct {
@@ -28,10 +31,11 @@ func New(postgresUri string) (adapter.Interface, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse postgres uri: %w", err)
 	}
-	adapter, err := postgres.Open(postgresUri)
+	db, err := sql.Open("pgx", postgresUri)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open postgres: %w", err)
 	}
+	adapter := postgres.New(db)
 	repo := rel.New(adapter)
 	repo.Instrumentation(rel.Instrumenter(func(ctx context.Context, op, message string, args ...any) func(err error) {
 		return func(err error) {
@@ -126,14 +130,13 @@ func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 }
 
 func createDatabase(ctx context.Context, repo rel.Repository, name string) error {
-	sql := fmt.Sprintf("CREATE DATABASE %s", pq.QuoteIdentifier(name))
+	sql := fmt.Sprintf("CREATE DATABASE %s", postgres.Quote{}.ID(name))
 	_, _, err := repo.Exec(ctx, sql)
 	if err == nil {
 		return nil
 	}
-	const pgErrDuplicateDB = "42P04" // https://www.postgresql.org/docs/current/errcodes-appendix.html
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && string(pqErr.Code) == pgErrDuplicateDB {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.DuplicateDatabase {
 		return nil
 	}
 	return err
@@ -141,28 +144,28 @@ func createDatabase(ctx context.Context, repo rel.Repository, name string) error
 
 func createUser(ctx context.Context, repo rel.Repository, name, password string) error {
 	sql := fmt.Sprintf("CREATE ROLE %s LOGIN PASSWORD %s NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;",
-		pq.QuoteIdentifier(name), pq.QuoteLiteral(password))
+		postgres.Quote{}.ID(name), postgres.Quote{}.Value(password))
 	_, _, err := repo.Exec(ctx, sql)
 	return err
 }
 
 func transferDatabaseOwnership(ctx context.Context, repo rel.Repository, dbName, dbUser string) error {
 	sql := fmt.Sprintf("ALTER DATABASE %s OWNER TO %s;",
-		pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(dbUser))
+		postgres.Quote{}.ID(dbName), postgres.Quote{}.ID(dbUser))
 	_, _, err := repo.Exec(ctx, sql)
 	return err
 }
 
 func revokePublicDatabaseAccess(ctx context.Context, repo rel.Repository, dbName string) error {
 	sql := fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC;",
-		pq.QuoteIdentifier(dbName))
+		postgres.Quote{}.ID(dbName))
 	_, _, err := repo.Exec(ctx, sql)
 	return err
 }
 
 func grantDatabaseAccess(ctx context.Context, repo rel.Repository, dbName, dbUser string) error {
 	sql := fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s;",
-		pq.QuoteIdentifier(dbName), pq.QuoteIdentifier(dbUser))
+		postgres.Quote{}.ID(dbName), postgres.Quote{}.ID(dbUser))
 	_, _, err := repo.Exec(ctx, sql)
 	return err
 }

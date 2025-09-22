@@ -4,10 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"testing"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -56,10 +55,10 @@ func TestPostgresAdapterIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"foo", "bar"}, instances)
 
-	fooDB, err := sql.Open("postgres", strings.Replace(foo.GetURI(), "sslmode=prefer", "sslmode=disable", 1))
+	fooDB, err := sql.Open("pgx", foo.GetURI())
 	require.NoError(t, err)
 	defer fooDB.Close()
-	barDB, err := sql.Open("postgres", strings.Replace(bar.GetURI(), "sslmode=prefer", "sslmode=disable", 1))
+	barDB, err := sql.Open("pgx", bar.GetURI())
 	require.NoError(t, err)
 	defer barDB.Close()
 
