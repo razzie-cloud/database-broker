@@ -33,18 +33,18 @@ func New() Interface {
 func (b *broker) RegisterAdapter(name string, adapter adapter.Interface) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.adapters[name] = adapter
+	b.adapters[strings.ToLower(name)] = adapter
 }
 
 func (b *broker) UnregisterAdapter(name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	delete(b.adapters, name)
+	delete(b.adapters, strings.ToLower(name))
 }
 
 func (b *broker) GetInstances(ctx context.Context, adapterName string) ([]string, error) {
 	b.mu.RLock()
-	a, ok := b.adapters[adapterName]
+	a, ok := b.adapters[strings.ToLower(adapterName)]
 	b.mu.RUnlock()
 	if !ok {
 		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
@@ -58,7 +58,7 @@ func (b *broker) GetOrCreateInstance(ctx context.Context, adapterName, instanceN
 		return nil, newError("invalid instance name: %s", instanceName).WithStatusCode(http.StatusUnprocessableEntity)
 	}
 	b.mu.RLock()
-	a, ok := b.adapters[adapterName]
+	a, ok := b.adapters[strings.ToLower(adapterName)]
 	b.mu.RUnlock()
 	if !ok {
 		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
