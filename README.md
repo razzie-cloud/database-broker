@@ -53,7 +53,7 @@ The broker exposes a RESTful API for managing database instances:
 
 * **GET** `/v1/instances/{adapter_name}`
 
-  Returns a list of database instances for the specified adapter (e.g., `postgres`, `dragonfly`) in a JSON string array.
+  Returns a list of database instances for the specified adapter (e.g., `postgres`, `redis`, `dragonfly`) in a JSON string array.
 
 * **GET** `/v1/instances/{adapter_name}/{instance_name}`
 

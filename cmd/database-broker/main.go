@@ -33,6 +33,7 @@ func main() {
 			log.Fatal("Failed to connect to Dragonfly: ", err)
 		}
 		defer d.Close()
+		b.RegisterAdapter("dragonfly", d)
 		b.RegisterAdapter("redis", d)
 	}
 
