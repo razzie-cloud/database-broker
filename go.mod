@@ -3,13 +3,13 @@ module github.com/razzie-cloud/database-broker
 go 1.25
 
 require (
+	github.com/alexflint/go-arg v1.6.0
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-rel/migration v0.3.1
 	github.com/go-rel/postgres v0.12.0
 	github.com/go-rel/rel v0.42.0
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
 	github.com/jackc/pgx/v5 v5.7.6
-	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/razzie/mock v1.5.0
 	github.com/redis/go-redis/v9 v9.14.0
 	github.com/stretchr/testify v1.11.1
@@ -20,6 +20,7 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/alexflint/go-scalar v1.2.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect

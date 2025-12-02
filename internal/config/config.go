@@ -3,18 +3,18 @@ package config
 import (
 	"log"
 
-	"github.com/kelseyhightower/envconfig"
+	"github.com/alexflint/go-arg"
 )
 
 type Config struct {
-	ServicePort  int    `envconfig:"SERVICE_PORT" default:"8080"`
-	PostgresURI  string `envconfig:"POSTGRES_URI"`
-	DragonflyURI string `envconfig:"DRAGONFLY_URI"`
+	ServicePort  int    `arg:"--port,env:SERVICE_PORT" default:"8080"`
+	PostgresURI  string `arg:"--postgres-uri,env:POSTGRES_URI"`
+	DragonflyURI string `arg:"--dragonfly-uri,env:DRAGONFLY_URI"`
 }
 
 func Load() *Config {
 	var cfg Config
-	if err := envconfig.Process("", &cfg); err != nil {
+	if err := arg.Parse(&cfg); err != nil {
 		log.Fatal("Failed to load config: ", err)
 	}
 	return &cfg
