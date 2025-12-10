@@ -41,11 +41,19 @@ docker compose up --build
 ```
 
 ## Configuration
-Configuration options can be set via the following environment variables:
-
+The service can be configured via the following optional environment variables:
+- `SERVICE_PORT`: Port for the broker API server (default: `8080`)
 - `POSTGRES_URI`: Connection URI for PostgreSQL (e.g. `postgres://admin:adminpass@postgres:5432/broker?sslmode=disable`)
-- `DRAGONFLY_URI`: Connection URI for Dragonfly (e.g. `redis://:adminpass@dragonfly:6379/0`)
-- `SERVER_PORT`: Port for the broker API server (default: `8080`)
+- `POSTGRES_PASSWORD_FILE`: Read PostgreSQL password from file
+- `DRAGONFLY_URI`: Connection URI for DragonflyDB (e.g. `redis://:adminpass@dragonfly:6379/0`)
+- `DRAGONFLY_PASSWORD_FILE`: Read DragonflyDB password from file
+
+Or via the matching command line flags:
+- `--port`
+- `--postgres-uri`
+- `--postgres-password-file`
+- `--dragonfly-uri`
+- `--dragonfly-password-file`
 
 ## API Usage
 
