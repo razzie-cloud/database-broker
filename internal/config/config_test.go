@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"testing"
 
@@ -16,8 +17,8 @@ func TestLoad_FromEnv(t *testing.T) {
 	t.Setenv("POSTGRES_URI", "postgres://user:pass@localhost:5432/testdb")
 	t.Setenv("DRAGONFLY_URI", "dragon://localhost:3000")
 
-	cfg := Load()
-
+	cfg, err := Load()
+	assert.NoError(t, err, "Load should not return an error")
 	assert.Equal(t, 12345, cfg.ServicePort, "ServicePort should be loaded from env")
 	assert.Equal(t, "postgres://user:pass@localhost:5432/testdb", cfg.PostgresURI)
 	assert.Equal(t, "dragon://localhost:3000", cfg.DragonflyURI)
@@ -48,9 +49,59 @@ func TestLoad_FromArgs(t *testing.T) {
 		"--dragonfly-uri", "dragon://cli:4000",
 	}
 
-	cfg := Load()
-
+	cfg, err := Load()
+	assert.NoError(t, err, "Load should not return an error")
 	assert.Equal(t, 54321, cfg.ServicePort, "ServicePort should be loaded from CLI args")
 	assert.Equal(t, "postgres://cli:pass@localhost:5432/clidb", cfg.PostgresURI)
 	assert.Equal(t, "dragon://cli:4000", cfg.DragonflyURI)
+}
+
+func TestLoad_PostgresPasswordFile(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"cmd"}
+
+	// create a temp password file
+	dir := t.TempDir()
+	pwdPath := dir + "/pgpwd"
+	pwd := "pg-secret"
+	if err := os.WriteFile(pwdPath, []byte(pwd), 0600); err != nil {
+		t.Fatalf("failed to write temp password file: %v", err)
+	}
+
+	t.Setenv("POSTGRES_URI", "postgres://user@localhost:5432/testdb")
+	t.Setenv("POSTGRES_PASSWORD_FILE", pwdPath)
+
+	cfg, err := Load()
+	assert.NoError(t, err, "Load should not return an error when using postgres password file")
+	// parse the resulting URI and ensure the password was injected
+	u, err := url.Parse(cfg.PostgresURI)
+	assert.NoError(t, err, "resulting Postgres URI should parse")
+	gotPwd, _ := u.User.Password()
+	assert.Equal(t, pwd, gotPwd, "password from file should be set in Postgres URI")
+}
+
+func TestLoad_DragonflyPasswordFile(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"cmd"}
+
+	dir := t.TempDir()
+	pwdPath := dir + "/dfpwd"
+	pwd := "df-secret"
+	if err := os.WriteFile(pwdPath, []byte(pwd), 0600); err != nil {
+		t.Fatalf("failed to write temp password file: %v", err)
+	}
+
+	t.Setenv("DRAGONFLY_URI", "redis://user@localhost:3000/0")
+	t.Setenv("DRAGONFLY_PASSWORD_FILE", pwdPath)
+
+	cfg, err := Load()
+	assert.NoError(t, err, "Load should not return an error when using dragonfly password file")
+	u, err := url.Parse(cfg.DragonflyURI)
+	assert.NoError(t, err, "resulting Dragonfly URI should parse")
+	gotPwd, _ := u.User.Password()
+	assert.Equal(t, pwd, gotPwd, "password from file should be set in Dragonfly URI")
 }
