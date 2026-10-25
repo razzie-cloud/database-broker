@@ -24,7 +24,7 @@ docker-compose.yml        # Multi-container orchestration for testing
 ## Getting Started
 
 ### Prerequisites
-- Go 1.25+
+- Go 1.27+
 - Docker (required for tests and containerized deployment)
 
 ### Build and Run Locally
