@@ -29,12 +29,18 @@ func New(dragonflyURI string) (adapter.Interface, error) {
 		return nil, err
 	}
 
+	// Honor probe deadlines for socket reads/writes as well as connection setup.
+	opts.ContextTimeoutEnabled = true
 	client := redis.NewClient(opts)
 	return &dragonflyAdapter{
 		client: client,
 		host:   host,
 		port:   port,
 	}, nil
+}
+
+func (d *dragonflyAdapter) Ping(ctx context.Context) error {
+	return d.client.Ping(ctx).Err()
 }
 
 func (d *dragonflyAdapter) GetInstances(ctx context.Context) ([]string, error) {

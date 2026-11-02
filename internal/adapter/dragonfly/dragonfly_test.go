@@ -43,6 +43,11 @@ func TestDragonflyAdapterIntegration(t *testing.T) {
 
 	adapter, err := New(uri)
 	require.NoError(t, err)
+	defer adapter.Close()
+	require.NoError(t, adapter.Ping(ctx))
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	require.Error(t, adapter.Ping(cancelled))
 
 	foo, err := adapter.GetOrCreateInstance(ctx, "foo")
 	require.NoError(t, err)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/razzie-cloud/database-broker/internal/adapter/postgres"
 	"github.com/razzie-cloud/database-broker/internal/broker"
 	"github.com/razzie-cloud/database-broker/internal/config"
+	"github.com/razzie-cloud/database-broker/internal/health"
 	"github.com/razzie-cloud/database-broker/internal/router"
 )
 
@@ -18,6 +20,7 @@ func main() {
 		log.Fatal(err)
 	}
 	b := broker.New()
+	var checks []health.Check
 
 	if cfg.PostgresURI != "" {
 		log.Println("Registering Postgres adapter")
@@ -27,6 +30,7 @@ func main() {
 		}
 		defer p.Close()
 		b.RegisterAdapter("postgres", p)
+		checks = append(checks, health.Check{Name: "postgres", Ping: p.Ping})
 	}
 
 	if cfg.DragonflyURI != "" {
@@ -38,9 +42,13 @@ func main() {
 		defer d.Close()
 		b.RegisterAdapter("dragonfly", d)
 		b.RegisterAdapter("redis", d)
+		checks = append(checks, health.Check{Name: "dragonfly", Ping: d.Ping})
 	}
 
-	r := router.New(b)
+	monitor := health.New(checks...)
+	stopHealth := monitor.Start(context.Background())
+	defer stopHealth()
+	r := router.WithHealth(b, monitor)
 	addr := fmt.Sprintf(":%d", cfg.ServicePort)
 	log.Print("Listening on ", addr)
 	log.Fatal(http.ListenAndServe(addr, r))

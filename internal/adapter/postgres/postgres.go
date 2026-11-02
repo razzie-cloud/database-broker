@@ -20,6 +20,7 @@ import (
 )
 
 type postgresAdapter struct {
+	db      *sql.DB
 	adapter rel.Adapter
 	repo    rel.Repository
 	host    string
@@ -46,11 +47,16 @@ func New(postgresUri string) (adapter.Interface, error) {
 	}))
 	migrate(repo)
 	return &postgresAdapter{
+		db:      db,
 		adapter: adapter,
 		repo:    repo,
 		host:    host,
 		port:    port,
 	}, nil
+}
+
+func (pg *postgresAdapter) Ping(ctx context.Context) error {
+	return pg.db.PingContext(ctx)
 }
 
 func (pg *postgresAdapter) Close() error {
