@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter"
+	"github.com/razzie-cloud/database-broker/internal/logging"
 	"github.com/razzie-cloud/database-broker/internal/util"
 
 	"github.com/go-rel/postgres"
@@ -38,14 +38,11 @@ func New(postgresUri string) (adapter.Interface, error) {
 	}
 	adapter := postgres.New(db)
 	repo := rel.New(adapter)
-	repo.Instrumentation(rel.Instrumenter(func(ctx context.Context, op, message string, args ...any) func(err error) {
-		return func(err error) {
-			if err != nil && err != rel.ErrNotFound {
-				log.Printf("[op: %s] %s - %v", op, fmt.Sprintf(message, args...), err)
-			}
-		}
-	}))
-	migrate(repo)
+	repo.Instrumentation(nil)
+	if err := migrate(repo); err != nil {
+		_ = db.Close()
+		return nil, logging.Wrap("migrate_metadata", err)
+	}
 	return &postgresAdapter{
 		db:      db,
 		adapter: adapter,
@@ -88,7 +85,15 @@ func (pg *postgresAdapter) GetInstance(ctx context.Context, instanceName string)
 	return &instance, nil
 }
 
-func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName string) (adapter.Instance, error) {
+func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName string) (result adapter.Instance, err error) {
+	logging.Fields(ctx, "adapter", "postgres", "instance_name", instanceName[:min(len(instanceName), 128)])
+	start := time.Now()
+	stage := "lookup_instance"
+	defer func() {
+		if err != nil {
+			err = logging.Wrap(stage, err)
+		}
+	}()
 	instance, err := pg.GetInstance(ctx, instanceName)
 	if err == nil {
 		return instance, nil
@@ -99,10 +104,13 @@ func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 	dbName := "db_" + instanceName
 	dbUser := "user_" + instanceName + "_" + strings.ToLower(util.RandToken(4))
 	dbPass := util.RandPassword()
+	stage = "create_database"
 	if err := createDatabase(ctx, pg.repo, dbName); err != nil {
 		return nil, err
 	}
+	stage = "begin_transaction"
 	err = pg.repo.Transaction(ctx, func(txCtx context.Context) error {
+		stage = "create_role"
 		if err := createUser(txCtx, pg.repo, dbUser, dbPass); err != nil {
 			return fmt.Errorf("create role: %w", err)
 		}
@@ -115,23 +123,29 @@ func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 			Password:     dbPass,
 			CreatedAt:    time.Now().UTC(),
 		}
+		stage = "save_metadata"
 		if err := pg.repo.Insert(txCtx, instance); err != nil {
 			return fmt.Errorf("insert instance: %w", err)
 		}
+		stage = "transfer_ownership"
 		if err := transferDatabaseOwnership(txCtx, pg.repo, dbName, dbUser); err != nil {
 			return fmt.Errorf("transfer db ownership: %w", err)
 		}
+		stage = "revoke_public_access"
 		if err := revokePublicDatabaseAccess(txCtx, pg.repo, dbName); err != nil {
 			return fmt.Errorf("revoke db public access: %w", err)
 		}
+		stage = "grant_access"
 		if err := grantDatabaseAccess(txCtx, pg.repo, dbName, dbUser); err != nil {
 			return fmt.Errorf("grant db connect access: %w", err)
 		}
+		stage = "commit_transaction"
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	logging.For(ctx, "adapter", "postgres", "instance_name", instanceName[:min(len(instanceName), 128)]).Info("Instance provisioned", "event", "instance.provisioned", "duration_ms", time.Since(start).Milliseconds())
 	return instance, nil
 }
 

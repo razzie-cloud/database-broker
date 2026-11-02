@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter"
+	"github.com/razzie-cloud/database-broker/internal/logging"
 	"github.com/razzie-cloud/database-broker/internal/util"
 
 	"github.com/redis/go-redis/v9"
@@ -20,6 +21,7 @@ type dragonflyAdapter struct {
 }
 
 func New(dragonflyURI string) (adapter.Interface, error) {
+	redis.SetLogger(logging.RedisLogger{})
 	host, port, err := util.GetURIHostPort(dragonflyURI, 5432)
 	if err != nil {
 		return nil, fmt.Errorf("parse dragonfly uri: %w", err)
@@ -59,7 +61,15 @@ func (d *dragonflyAdapter) GetInstances(ctx context.Context) ([]string, error) {
 	return instances, nil
 }
 
-func (d *dragonflyAdapter) GetOrCreateInstance(ctx context.Context, instanceName string) (adapter.Instance, error) {
+func (d *dragonflyAdapter) GetOrCreateInstance(ctx context.Context, instanceName string) (result adapter.Instance, err error) {
+	logging.Fields(ctx, "adapter", "dragonfly", "instance_name", instanceName[:min(len(instanceName), 128)])
+	start := time.Now()
+	stage := "lookup_instance"
+	defer func() {
+		if err != nil {
+			err = logging.Wrap(stage, err)
+		}
+	}()
 	instance, err := d.getInstance(ctx, instanceName)
 	if err != nil {
 		return nil, err
@@ -79,20 +89,25 @@ func (d *dragonflyAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 		Namespace: ns,
 		CreatedAt: time.Now().UTC(),
 	}
+	stage = "encode_metadata"
 	data, err := json.Marshal(instance)
 	if err != nil {
 		return nil, fmt.Errorf("marshal instance data: %w", err)
 	}
+	stage = "create_acl_user"
 	if err := d.createUser(ctx, user, pass, ns); err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
+	stage = "save_metadata"
 	ok, err := d.client.SetNX(ctx, "instance:"+instanceName, string(data), 0).Result()
 	if err != nil {
 		return nil, fmt.Errorf("save instance data: %w", err)
 	}
 	if !ok {
+		stage = "reload_metadata"
 		return d.getInstance(ctx, instanceName)
 	}
+	logging.For(ctx, "adapter", "dragonfly", "instance_name", instanceName[:min(len(instanceName), 128)]).Info("Instance provisioned", "event", "instance.provisioned", "duration_ms", time.Since(start).Milliseconds())
 	return instance, nil
 }
 

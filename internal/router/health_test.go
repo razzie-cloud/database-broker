@@ -1,23 +1,18 @@
 package router
 
 import (
-	"net/http"
+	"bytes"
+	"log/slog"
 	"net/http/httptest"
+	"strings"
 	"testing"
-
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 func TestHealthProbesBypassAccessLoggingAndBroker(t *testing.T) {
-	calls := 0
-	previous := middleware.DefaultLogger
-	middleware.DefaultLogger = func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls++
-			next.ServeHTTP(w, r)
-		})
-	}
-	defer func() { middleware.DefaultLogger = previous }()
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(previous)
 	h := New(nil)
 	for _, tc := range []struct {
 		method, path string
@@ -29,12 +24,12 @@ func TestHealthProbesBypassAccessLoggingAndBroker(t *testing.T) {
 			t.Fatalf("%s %s: %d", tc.method, tc.path, w.Code)
 		}
 	}
-	if calls != 0 {
+	if output.Len() != 0 {
 		t.Fatal("probes reached request logging")
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/missing", nil))
-	if calls != 1 || w.Code != 404 {
+	if !strings.Contains(output.String(), `"event":"request.completed"`) || w.Code != 404 {
 		t.Fatal("ordinary request logging or routing changed")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter"
+	"github.com/razzie-cloud/database-broker/internal/logging"
 )
 
 var validInstanceName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
@@ -49,6 +50,7 @@ func (b *broker) GetInstances(ctx context.Context, adapterName string) ([]string
 	if !ok {
 		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
 	}
+	logging.Fields(ctx, "adapter", strings.ToLower(adapterName))
 	return a.GetInstances(ctx)
 }
 
@@ -63,5 +65,6 @@ func (b *broker) GetOrCreateInstance(ctx context.Context, adapterName, instanceN
 	if !ok {
 		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
 	}
+	logging.Fields(ctx, "adapter", strings.ToLower(adapterName), "instance_name", instanceName[:min(len(instanceName), 128)])
 	return a.GetOrCreateInstance(ctx, instanceName)
 }

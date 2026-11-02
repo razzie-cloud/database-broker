@@ -1,9 +1,11 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -46,6 +48,10 @@ func TestPostgresAdapterIntegration(t *testing.T) {
 	adapter, err := New(uri)
 	require.NoError(t, err)
 	defer adapter.Close()
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	defer slog.SetDefault(previous)
 	require.NoError(t, adapter.Ping(ctx))
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
@@ -55,6 +61,19 @@ func TestPostgresAdapterIntegration(t *testing.T) {
 	require.NoError(t, err)
 	bar, err := adapter.GetOrCreateInstance(ctx, "bar")
 	require.NoError(t, err)
+	require.NotContains(t, output.String(), foo.(*Instance).Password)
+	require.NotContains(t, output.String(), bar.(*Instance).Password)
+	require.NotContains(t, output.String(), "CREATE ROLE")
+	require.NotContains(t, output.String(), "SELECT")
+	require.Contains(t, output.String(), `"event":"instance.provisioned"`)
+	require.Contains(t, output.String(), `"adapter":"postgres"`)
+	output.Reset()
+	_, err = adapter.GetOrCreateInstance(ctx, "foo")
+	require.NoError(t, err)
+	// The old error-only instrumenter leaked this statement's password.
+	err = createUser(ctx, adapter.(*postgresAdapter).repo, foo.(*Instance).Username, "logging-sentinel-secret")
+	require.Error(t, err)
+	require.Empty(t, output.String(), "existing lookups and low-level SQL failures must not log")
 
 	instances, err := adapter.GetInstances(ctx)
 	require.NoError(t, err)

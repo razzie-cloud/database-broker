@@ -5,9 +5,9 @@ import (
 
 	"github.com/razzie-cloud/database-broker/internal/broker"
 	"github.com/razzie-cloud/database-broker/internal/health"
+	"github.com/razzie-cloud/database-broker/internal/logging"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 func New(broker broker.Interface) http.Handler {
@@ -18,16 +18,20 @@ func New(broker broker.Interface) http.Handler {
 func WithHealth(broker broker.Interface, monitor *health.Monitor) http.Handler {
 	ctrl := &controller{broker: broker}
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			defer func() { logging.SetRoute(req.Context(), chi.RouteContext(req.Context()).RoutePattern()) }()
+			next.ServeHTTP(w, req)
+		})
+	})
 	r.Route("/v1", func(r chi.Router) {
 		r.Get("/instances/{adapter_name}", ctrl.listInstances)
 		r.Get("/instances/{adapter_name}/{instance_name}", ctrl.getInstance)
 		r.Get("/instances/{adapter_name}/{instance_name}/uri", ctrl.getInstanceURI)
 	})
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	return logging.Middleware(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if !monitor.Handle(w, req) {
 			r.ServeHTTP(w, req)
 		}
-	})
+	}))
 }

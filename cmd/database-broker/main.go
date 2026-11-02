@@ -3,30 +3,42 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter/dragonfly"
 	"github.com/razzie-cloud/database-broker/internal/adapter/postgres"
 	"github.com/razzie-cloud/database-broker/internal/broker"
 	"github.com/razzie-cloud/database-broker/internal/config"
 	"github.com/razzie-cloud/database-broker/internal/health"
+	"github.com/razzie-cloud/database-broker/internal/logging"
 	"github.com/razzie-cloud/database-broker/internal/router"
 )
 
 func main() {
+	if err := logging.Setup("database-broker"); err != nil {
+		slog.Error(err.Error(), "event", "config.invalid", "field", "LOG_LEVEL")
+		os.Exit(1)
+	}
+	if err := run(); err != nil {
+		slog.Error("Service failed", append([]any{"event", "server.failed"}, logging.ErrorAttrs(err)...)...)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		return logging.Wrap("config", err)
 	}
 	b := broker.New()
 	var checks []health.Check
 
 	if cfg.PostgresURI != "" {
-		log.Println("Registering Postgres adapter")
 		p, err := postgres.New(cfg.PostgresURI)
 		if err != nil {
-			log.Fatal("Failed to connect to Postgres: ", err)
+			return logging.Wrap("postgres_init", err)
 		}
 		defer p.Close()
 		b.RegisterAdapter("postgres", p)
@@ -34,10 +46,9 @@ func main() {
 	}
 
 	if cfg.DragonflyURI != "" {
-		log.Println("Registering Dragonfly adapter")
 		d, err := dragonfly.New(cfg.DragonflyURI)
 		if err != nil {
-			log.Fatal("Failed to connect to Dragonfly: ", err)
+			return logging.Wrap("dragonfly_init", err)
 		}
 		defer d.Close()
 		b.RegisterAdapter("dragonfly", d)
@@ -50,6 +61,17 @@ func main() {
 	defer stopHealth()
 	r := router.WithHealth(b, monitor)
 	addr := fmt.Sprintf(":%d", cfg.ServicePort)
-	log.Print("Listening on ", addr)
-	log.Fatal(http.ListenAndServe(addr, r))
+	var adapters []string
+	if cfg.PostgresURI != "" {
+		adapters = append(adapters, "postgres")
+	}
+	if cfg.DragonflyURI != "" {
+		adapters = append(adapters, "dragonfly", "redis")
+	}
+	if len(adapters) == 0 {
+		slog.Warn("No backends configured; readiness will fail", "event", "broker.no_backends")
+	}
+	slog.Info("Server listening", "event", "server.listening", "address", addr, "adapters", adapters)
+	server := &http.Server{Addr: addr, Handler: r, ErrorLog: logging.ServerLogger()}
+	return logging.Wrap("serve", server.ListenAndServe())
 }
