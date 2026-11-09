@@ -25,13 +25,14 @@ changes alone do not update that image.
 - `internal/router/` owns chi routes, request context propagation, response
   encoding, and error-to-HTTP translation. Tests use mocked broker interfaces.
 - `internal/adapter/interface.go` defines backend operations and the instance
-  methods `GetJSON` and `GetURI`. Backend implementations live in `postgres/`
-  and `dragonfly/`, with response models and URI construction in `instance.go`.
+  methods `GetJSON` and `GetURI`. Backend implementations live in `postgres/`,
+  `dragonfly/`, and `valkey/`, with response models and URI construction in
+  `instance.go`.
 - `internal/adapter/postgres/migrations.go` contains versioned go-rel metadata
   migrations, applied during PostgreSQL adapter construction.
 - `internal/util/` provides URI host/port parsing and cryptographic random
   credentials. `Dockerfile` builds the binary; `docker-compose.yml` supplies
-  local PostgreSQL, Dragonfly, and broker services.
+  local PostgreSQL, Dragonfly, Valkey, and broker services.
 
 ## Configuration and local running
 
@@ -46,9 +47,12 @@ configuration consistent when changing settings.
 | `POSTGRES_PASSWORD_FILE` | `--postgres-password-file` | unset |
 | `DRAGONFLY_URI` | `--dragonfly-uri` | unset |
 | `DRAGONFLY_PASSWORD_FILE` | `--dragonfly-password-file` | unset |
+| `VALKEY_URI` | `--valkey-uri` | unset |
+| `VALKEY_PASSWORD_FILE` | `--valkey-password-file` | unset |
 
 Each backend is enabled only when its URI is supplied. Dragonfly registers
-both `dragonfly` and `redis` against the same adapter. With neither URI, the
+both `dragonfly` and `redis` against the same adapter. Valkey registers only
+`valkey`, independently of Dragonfly. With no backend URI, the
 HTTP server still starts but no adapters are registered.
 
 Password files replace the password in the corresponding URI only when that
@@ -58,8 +62,8 @@ environment files out of Git and diagnostic output.
 
 Run with `go run ./cmd/database-broker` after setting local backend URIs, or
 use `docker compose up --build` against a disposable local Docker daemon.
-Compose publishes ports 5432, 6379, and 8080; check for conflicts with other
-local stacks. Backend hosts in returned URIs come from the configured backend
+Compose publishes ports 5432, 6379 (Dragonfly), 6380 (Valkey), and 8080; check
+for conflicts with other local stacks. Backend hosts in returned URIs come from the configured backend
 URI, so they must be reachable by the intended consumer.
 
 ## HTTP contract
@@ -221,7 +225,28 @@ rotated. Keep reservations with the metadata in backups. Do not delete/expire
 them while replicas can be provisioning. All writers must use this reservation
 protocol; quiesce first-time provisioning when upgrading older broker replicas.
 
-Both adapters list their metadata registry rather than discovering all backend
+### Valkey provisioning sequence
+
+`internal/adapter/valkey/valkey.go` requires standalone Valkey 9.1.0+ and rejects
+other/older servers using INFO's `valkey_version`. It reads CONFIG GET databases
+and ACL WHOAMI at startup. The configured database stores metadata and is never
+assigned to tenants; all replicas must use the same metadata database. Require
+a dedicated, initially empty server and reserve the `user_` username prefix.
+
+WATCH/MULTI/EXEC atomically reserves the first available database number and
+canonical random credentials in `valkey:database-owners` and
+`valkey:instance-pending:<name>`. Keep both indefinitely, even after failures.
+Apply ACL SETUSER with reset, one `db=<number>`, and restricted data/connection/
+transaction/scripting categories, excluding dangerous/admin/module/shared
+function operations. Always deny `@pubsub` and reset all channel permissions:
+pub/sub ignores numbered databases. Never change the administrator's ACL, and
+reject tenant usernames that match it. Publish the reserved JSON with SETNX at
+`valkey:instance:<name>` only after ACL success. Retries use the same reservation;
+published lookups retain credentials. Return redis/rediss URIs selecting the
+allocated database and preserving TLS. Exhaustion fails without creating a user.
+See [Valkey operations](docs/reference.md#valkey) for capacity and persistence.
+
+All adapters list their metadata registry rather than discovering all backend
 databases/users/namespaces. PostgreSQL sorts stored instance names; Dragonfly
 uses `SCAN instance:*` with count 100. There is no deletion, credential rotation,
 or reconciliation API to repair resources changed outside the broker.
@@ -244,8 +269,9 @@ changes, also run the full suite against a disposable local Docker daemon:
 go test ./...
 ```
 
-Adapter integration tests use testcontainers to start `postgres:latest` and
-`docker.dragonflydb.io/dragonflydb/dragonfly:latest`, potentially pulling images.
+Adapter integration tests use testcontainers to start `postgres:latest`,
+`docker.dragonflydb.io/dragonflydb/dragonfly:latest`, and `valkey/valkey:9.1.0`,
+potentially pulling images.
 They exercise provisioning and data isolation between instances and do not
 skip when Docker is unavailable. Verify the effective testcontainers Docker
 endpoint is local/disposable; never target the production daemon or change
@@ -257,10 +283,13 @@ checks ran, whether adapter integration tests ran, and any toolchain, Docker,
 or network limitations. Documentation-only changes need a diff/whitespace
 review rather than Go builds or database tests.
 
-Without Docker, explicitly set disposable loopback `TEST_DATABASE_URL` and
-`TEST_DRAGONFLY_URL` to run the same full adapter suite against native processes.
+Without Docker, explicitly set disposable loopback `TEST_DATABASE_URL`,
+`TEST_DRAGONFLY_URL`, and `TEST_VALKEY_URL` to run the same full adapter suite
+against native processes.
 PostgreSQL tests create/drop their own metadata database and provisioned roles/DBs.
 Dragonfly tests require an empty broker registry and remove their metadata,
-reservations, and ACL users. Ordinary Redis is insufficient. Never use production
-backends. Tests cover concurrent startup/provisioning, canceled lock acquisition,
+reservations, and ACL users. Valkey tests require no data in any database and only
+the default admin; cleanup removes all test data and created users. Ordinary
+Redis is insufficient. Never use production backends. Tests cover concurrent
+startup/provisioning, canceled lock acquisition,
 migration rollback, and retry after an ACL succeeds but metadata publication fails.

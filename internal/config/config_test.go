@@ -16,12 +16,14 @@ func TestLoad_FromEnv(t *testing.T) {
 	t.Setenv("SERVICE_PORT", "12345")
 	t.Setenv("POSTGRES_URI", "postgres://user:pass@localhost:5432/testdb")
 	t.Setenv("DRAGONFLY_URI", "dragon://localhost:3000")
+	t.Setenv("VALKEY_URI", "redis://localhost:6379/0")
 
 	cfg, err := Load()
 	assert.NoError(t, err, "Load should not return an error")
 	assert.Equal(t, 12345, cfg.ServicePort, "ServicePort should be loaded from env")
 	assert.Equal(t, "postgres://user:pass@localhost:5432/testdb", cfg.PostgresURI)
 	assert.Equal(t, "dragon://localhost:3000", cfg.DragonflyURI)
+	assert.Equal(t, "redis://localhost:6379/0", cfg.ValkeyURI)
 }
 
 func TestLoad_FromArgs(t *testing.T) {
@@ -29,7 +31,7 @@ func TestLoad_FromArgs(t *testing.T) {
 	defer func() { os.Args = origArgs }()
 
 	// ensure relevant env vars are unset for this test; register cleanup to restore them
-	keys := []string{"SERVICE_PORT", "POSTGRES_URI", "DRAGONFLY_URI"}
+	keys := []string{"SERVICE_PORT", "POSTGRES_URI", "DRAGONFLY_URI", "VALKEY_URI"}
 	for _, k := range keys {
 		if v, ok := os.LookupEnv(k); ok {
 			// restore original value at cleanup
@@ -47,6 +49,7 @@ func TestLoad_FromArgs(t *testing.T) {
 		"--port", "54321",
 		"--postgres-uri", "postgres://cli:pass@localhost:5432/clidb",
 		"--dragonfly-uri", "dragon://cli:4000",
+		"--valkey-uri", "rediss://cli:pass@localhost:6379/3",
 	}
 
 	cfg, err := Load()
@@ -54,6 +57,36 @@ func TestLoad_FromArgs(t *testing.T) {
 	assert.Equal(t, 54321, cfg.ServicePort, "ServicePort should be loaded from CLI args")
 	assert.Equal(t, "postgres://cli:pass@localhost:5432/clidb", cfg.PostgresURI)
 	assert.Equal(t, "dragon://cli:4000", cfg.DragonflyURI)
+	assert.Equal(t, "rediss://cli:pass@localhost:6379/3", cfg.ValkeyURI)
+}
+
+func TestLoad_ValkeyPasswordFile(t *testing.T) {
+	origArgs := os.Args
+	t.Cleanup(func() { os.Args = origArgs })
+	os.Args = []string{"cmd"}
+	pwdPath := t.TempDir() + "/valkey-password"
+	pwd := "secret:@/with-newline\n"
+	assert.NoError(t, os.WriteFile(pwdPath, []byte(pwd), 0600))
+	t.Setenv("VALKEY_URI", "rediss://admin:old@localhost:6379/2")
+	t.Setenv("VALKEY_PASSWORD_FILE", pwdPath)
+	cfg, err := Load()
+	if !assert.NoError(t, err) {
+		return
+	}
+	u, err := url.Parse(cfg.ValkeyURI)
+	assert.NoError(t, err)
+	got, _ := u.User.Password()
+	assert.Equal(t, pwd, got)
+	assert.Equal(t, "admin", u.User.Username())
+	assert.Equal(t, "rediss", u.Scheme)
+	assert.Equal(t, "/2", u.Path)
+
+	t.Setenv("VALKEY_PASSWORD_FILE", pwdPath+"-missing")
+	_, err = Load()
+	assert.ErrorContains(t, err, "failed to read Valkey password file")
+	t.Setenv("VALKEY_URI", "")
+	_, err = Load()
+	assert.NoError(t, err, "password file is unused without URI")
 }
 
 func TestLoad_PostgresPasswordFile(t *testing.T) {

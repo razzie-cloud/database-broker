@@ -14,6 +14,8 @@ type Config struct {
 	PostgresPasswordFile  string `arg:"--postgres-password-file,env:POSTGRES_PASSWORD_FILE"`
 	DragonflyURI          string `arg:"--dragonfly-uri,env:DRAGONFLY_URI"`
 	DragonflyPasswordFile string `arg:"--dragonfly-password-file,env:DRAGONFLY_PASSWORD_FILE"`
+	ValkeyURI             string `arg:"--valkey-uri,env:VALKEY_URI"`
+	ValkeyPasswordFile    string `arg:"--valkey-password-file,env:VALKEY_PASSWORD_FILE"`
 }
 
 func Load() (*Config, error) {
@@ -46,6 +48,19 @@ func Load() (*Config, error) {
 		}
 		uri.User = url.UserPassword(uri.User.Username(), string(pwd))
 		cfg.DragonflyURI = uri.String()
+	}
+
+	if cfg.ValkeyURI != "" && cfg.ValkeyPasswordFile != "" {
+		pwd, err := os.ReadFile(cfg.ValkeyPasswordFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read Valkey password file: %w", err)
+		}
+		uri, err := url.Parse(cfg.ValkeyURI)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Valkey URI: %w", err)
+		}
+		uri.User = url.UserPassword(uri.User.Username(), string(pwd))
+		cfg.ValkeyURI = uri.String()
 	}
 
 	return &cfg, nil

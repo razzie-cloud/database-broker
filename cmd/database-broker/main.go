@@ -9,6 +9,7 @@ import (
 
 	"github.com/razzie-cloud/database-broker/internal/adapter/dragonfly"
 	"github.com/razzie-cloud/database-broker/internal/adapter/postgres"
+	"github.com/razzie-cloud/database-broker/internal/adapter/valkey"
 	"github.com/razzie-cloud/database-broker/internal/broker"
 	"github.com/razzie-cloud/database-broker/internal/config"
 	"github.com/razzie-cloud/database-broker/internal/health"
@@ -56,6 +57,16 @@ func run() error {
 		checks = append(checks, health.Check{Name: "dragonfly", Ping: d.Ping})
 	}
 
+	if cfg.ValkeyURI != "" {
+		v, err := valkey.New(cfg.ValkeyURI)
+		if err != nil {
+			return logging.Wrap("valkey_init", err)
+		}
+		defer v.Close()
+		b.RegisterAdapter("valkey", v)
+		checks = append(checks, health.Check{Name: "valkey", Ping: v.Ping})
+	}
+
 	monitor := health.New(checks...)
 	stopHealth := monitor.Start(context.Background())
 	defer stopHealth()
@@ -67,6 +78,9 @@ func run() error {
 	}
 	if cfg.DragonflyURI != "" {
 		adapters = append(adapters, "dragonfly", "redis")
+	}
+	if cfg.ValkeyURI != "" {
+		adapters = append(adapters, "valkey")
 	}
 	if len(adapters) == 0 {
 		slog.Warn("No backends configured; readiness will fail", "event", "broker.no_backends")

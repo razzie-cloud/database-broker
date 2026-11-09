@@ -14,6 +14,8 @@ At least one backend URI is needed to provision instances. Set:
 - `POSTGRES_PASSWORD_FILE`: Read PostgreSQL password from file
 - `DRAGONFLY_URI`: Connection URI for DragonflyDB (e.g. `redis://:adminpass@dragonfly:6379/0`)
 - `DRAGONFLY_PASSWORD_FILE`: Read DragonflyDB password from file
+- `VALKEY_URI`: Administrative connection URI for Valkey 9.1.0+ (e.g. `redis://:adminpass@valkey:6379/0`; `rediss://` enables TLS)
+- `VALKEY_PASSWORD_FILE`: Read Valkey password from file, verbatim, replacing the URI password
 
 Or via the matching command line flags:
 - `--port`
@@ -21,6 +23,55 @@ Or via the matching command line flags:
 - `--postgres-password-file`
 - `--dragonfly-uri`
 - `--dragonfly-password-file`
+- `--valkey-uri`
+- `--valkey-password-file`
+
+### Valkey
+
+`VALKEY_URI` enables the `valkey` adapter; `redis` remains an alias for Dragonfly
+even when both backends are configured. Ordinary Redis and Valkey older than
+9.1.0 are rejected during startup. Database permissions were added in
+[Valkey 9.1.0](https://valkey.io/commands/acl-setuser/).
+
+Use a dedicated, initially empty standalone Valkey server. The URI's database
+(default 0) stores broker metadata and is never assigned to an application.
+Each instance gets a unique numbered database, username `user_<name>`, and random
+password. The returned URI uses `redis://` or `rediss://` according to the
+administrative URI and selects the allocated database; JSON includes `database`.
+The default port is 6379. Clients must honor the database in the returned URI.
+
+Valkey's `databases` configuration must be at least 2; the default of 16 allows
+15 instances. Increase it at server startup when more are needed. Exhaustion
+fails provisioning without publishing credentials or creating an ACL user;
+existing instances remain available. All replicas must use the same metadata
+database. Do not run independent broker registries on different databases of
+the same server, or create unmanaged users/data in its application databases.
+The `user_` username prefix is reserved for broker-managed accounts.
+
+The administrative account needs INFO, CONFIG GET databases, ACL WHOAMI,
+ACL SETUSER, and metadata read/write/scan/transaction permissions. Keep it
+password-protected. The broker leaves its permissions unchanged, including
+pub/sub. Every provisioned user has a reset ACL with `db=<allocated-number>`,
+all key patterns within that database, and normal data, connection, transaction,
+and scripting commands. Administrative and dangerous commands, shared function
+management, module commands, and global script management are excluded. Limited
+CLIENT and SCRIPT subcommands support ordinary clients. Cross-database access
+is enforced by Valkey, including SELECT, COPY, MOVE, and script commands.
+
+Pub/sub is global across numbered databases. All provisioned users have
+`-@pubsub` and `resetchannels`, denying publish, subscribe, pattern/sharded
+pub/sub, and pub/sub introspection. Any accounts created outside the broker are
+the operator's responsibility; only the administrator should have pub/sub access.
+
+Reservations and published records live at `valkey:instance-pending:<name>` and
+`valkey:instance:<name>`; `valkey:database-owners` tracks allocated numbers.
+WATCH/MULTI/EXEC atomically reserves a database and canonical credentials before
+ACL creation. Reservations and ownership never expire, including on failure;
+retries resume with the same database/password after ACL or publication errors.
+Listings include only published records. There is no deletion or reclamation API.
+Back up all three metadata structures together and retain the server's ACL state
+using operator-managed ACL persistence. Restoring data without the corresponding
+ACLs requires operator recovery; existing lookups do not recreate accounts.
 
 ## API Usage
 
@@ -28,7 +79,7 @@ The broker exposes a RESTful API for managing database instances:
 
 * **GET** `/v1/instances/{adapter_name}`
 
-  Returns a list of database instances for the specified adapter (e.g., `postgres`, `redis`, `dragonfly`) in a JSON string array.
+  Returns a list of database instances for the specified adapter (`postgres`, `redis`, `dragonfly`, or `valkey`) in a JSON string array.
 
 * **GET** `/v1/instances/{adapter_name}/{instance_name}`
 
@@ -40,14 +91,14 @@ The broker exposes a RESTful API for managing database instances:
 
 ## Development and checks
 
-Use Go 1.27. For a native run, set `POSTGRES_URI` and/or `DRAGONFLY_URI` to
+Use Go 1.27. For a native run, set `POSTGRES_URI`, `DRAGONFLY_URI`, and/or `VALKEY_URI` to
 backends reachable from the host, then run `go run ./cmd/database-broker`. The
 PostgreSQL account needs database/role creation privileges and an existing
 metadata database. Dragonfly needs administrative ACL permissions; ordinary
 Redis does not support its namespace provisioning. Use an explicit `6379` port.
 
 Returned URI hosts come from these backend settings. Compose uses the Docker
-service names `postgres` and `dragonfly`; clients must be on that network to
+service names `postgres`, `dragonfly`, and `valkey`; clients must be on that network to
 resolve them. Use reachable hostnames when configuring another deployment.
 
 Unit tests without Docker:
@@ -58,12 +109,14 @@ go vet ./...
 go test ./internal/config ./internal/broker ./internal/router ./internal/util
 ```
 
-The full `go test ./...` suite starts disposable PostgreSQL and Dragonfly
+The full `go test ./...` suite starts disposable PostgreSQL, Dragonfly, and Valkey 9.1.0
 containers through testcontainers by default. Alternatively, set
-`TEST_DATABASE_URL` and `TEST_DRAGONFLY_URL` to disposable loopback native backends.
+`TEST_DATABASE_URL`, `TEST_DRAGONFLY_URL`, and `TEST_VALKEY_URL` to disposable loopback native backends.
 PostgreSQL tests create/drop databases and roles; Dragonfly tests require an
 empty broker registry and clean up their instance metadata, reservations, and ACL
-users. They do not skip adapter tests when Docker is unavailable. See [AGENTS.md](../AGENTS.md)
+users. Valkey tests require an entirely empty dedicated server with only the
+default administrator and clean up all test data and created ACL users.
+They do not skip adapter tests when Docker is unavailable. See [AGENTS.md](../AGENTS.md)
 for provisioning internals, backend constraints, and verification guidance.
 
 ## Multiple replicas
@@ -121,7 +174,7 @@ This project is licensed under the MIT License.
 ## Health probes
 
 Internal `GET /healthz` reports process liveness; `GET /readyz` reports readiness
-of all configured backends (PostgreSQL and/or Dragonfly). The redis alias is
+of all configured backends (PostgreSQL, Dragonfly, and/or Valkey). The redis alias is
 checked only once.
 Both support HEAD and return plain text: 200 on success, 503 when not ready,
 and 405 for other methods. Responses use `Cache-Control: no-store` and never
