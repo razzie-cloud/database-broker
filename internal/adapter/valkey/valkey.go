@@ -175,6 +175,8 @@ func (v *valkeyAdapter) GetOrCreateInstance(ctx context.Context, name string) (r
 		"reset", "on", ">"+instance.Password, "~*", "db="+strconv.Itoa(instance.Database),
 		"+@read", "+@write", "+@connection", "+@transaction", "+@scripting",
 		"-@dangerous", "-@admin", "-@pubsub", "resetchannels",
+		// TIME is only in @fast; gateway SSO scripts need the server clock.
+		"+time",
 		"-function", "-script", "+script|load", "+script|exists",
 		"-client", "+client|setname", "+client|getname", "+client|setinfo", "+client|id",
 	).Err()

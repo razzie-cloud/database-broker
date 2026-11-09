@@ -57,6 +57,17 @@ and scripting commands. Administrative and dangerous commands, shared function
 management, module commands, and global script management are excluded. Limited
 CLIENT and SCRIPT subcommands support ordinary clients. Cross-database access
 is enforced by Valkey, including SELECT, COPY, MOVE, and script commands.
+TIME is explicitly allowed for server-clock reads, including inside Lua scripts.
+It belongs to `@fast`, outside the categories otherwise granted to applications.
+
+Existing published instances retain their ACLs on lookup. When upgrading from a
+broker that omitted TIME, an administrator must grant it to existing application
+accounts and persist the change when an ACL file is configured, for example:
+
+```text
+ACL SETUSER user_access_gateway +time
+ACL SAVE
+```
 
 Pub/sub is global across numbered databases. All provisioned users have
 `-@pubsub` and `resetchannels`, denying publish, subscribe, pattern/sharded

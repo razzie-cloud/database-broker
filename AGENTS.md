@@ -238,8 +238,11 @@ canonical random credentials in `valkey:database-owners` and
 `valkey:instance-pending:<name>`. Keep both indefinitely, even after failures.
 Apply ACL SETUSER with reset, one `db=<number>`, and restricted data/connection/
 transaction/scripting categories, excluding dangerous/admin/module/shared
-function operations. Always deny `@pubsub` and reset all channel permissions:
-pub/sub ignores numbered databases. Never change the administrator's ACL, and
+function operations. Explicitly grant TIME for server-clock reads in application
+scripts; its `@fast` category is not otherwise granted. Existing published
+instances do not have their ACLs reapplied on lookup; see the reference for
+upgrading their TIME permission. Always deny `@pubsub` and reset all channel
+permissions: pub/sub ignores numbered databases. Never change the administrator's ACL, and
 reject tenant usernames that match it. Publish the reserved JSON with SETNX at
 `valkey:instance:<name>` only after ACL success. When `aclfile` is configured,
 run ACL SAVE before publication; failures retain the reservation for retry.

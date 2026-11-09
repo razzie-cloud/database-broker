@@ -155,6 +155,12 @@ func TestValkeyIsolation(t *testing.T) {
 	}
 	// Scripts run with the caller's ACL, including SELECT and PUBLISH checks.
 	require.Equal(t, "foo", fc.Eval(ctx, `return redis.call('GET', KEYS[1])`, []string{"same-key"}).Val())
+	// The gateway's SSO flow reads the server clock from Lua. TIME belongs to
+	// @fast, so the data and scripting categories alone do not grant it.
+	require.NoError(t, fc.Time(ctx).Err())
+	clock, err := fc.Eval(ctx, `return redis.call('TIME')`, nil).StringSlice()
+	require.NoError(t, err)
+	require.Len(t, clock, 2)
 	require.Error(t, fc.Eval(ctx, `return redis.call('SELECT', ARGV[1])`, nil, b.Database).Err())
 	require.Error(t, fc.Eval(ctx, `return redis.call('PUBLISH', 'channel', 'message')`, nil).Err())
 	// Even authenticating without SELECT cannot read broker metadata from DB 0.
