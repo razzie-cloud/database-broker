@@ -110,7 +110,10 @@ they do not copy all options from the configured administrative URI.
 create databases and roles, transfer database ownership, change access grants,
 and read/write broker metadata. The broker does not create this administrative
 account or its metadata database; they must already exist. Adapter startup
-applies the metadata migrations in that database.
+applies the metadata migrations in that database. An outer go-rel transaction
+takes a PostgreSQL advisory lock before migration discovery/version-table creation;
+individual migrations run as nested savepoints on the same session. Startup has
+a 30-second deadline, and failed migrations roll back the version table too.
 
 For a request for `Example`, the broker normalizes the name to `example` before
 calling `GetOrCreateInstance`:
@@ -124,10 +127,16 @@ calling `GetOrCreateInstance`:
    The suffix is seven lowercase unpadded base32 characters from four random
    bytes. Passwords are 26 lowercase unpadded base32 characters from 16 random
    bytes. Both use `crypto/rand` through `internal/util/rand.go`.
+   Before generating these, pin a connection and acquire a per-instance session
+   advisory lock, then re-read metadata and return the winner if it now exists.
+   Use that same connection for all remaining provisioning work. Connection loss
+   must stop both the lock and further writes; never lock on one connection and
+   provision on another.
 3. Execute `CREATE DATABASE` outside the metadata transaction. A PostgreSQL
    `DuplicateDatabase` error is accepted, allowing reuse of an existing
    `db_example`; other errors stop provisioning.
-4. In one go-rel transaction, create the login role, insert the metadata row,
+4. In one database/sql transaction on the locked connection, create the login
+   role, insert the metadata row,
    transfer database ownership, revoke PUBLIC CONNECT, and grant the new role
    CONNECT. The SQL below shows the order; angle-bracket values are illustrative
    placeholders, and actual SQL quotes identifiers/values with `postgres.Quote`:
@@ -154,10 +163,12 @@ calling `GetOrCreateInstance`:
 Failures inside the transaction roll back its role/metadata/permission changes,
 but leave the separately created database behind. There is no compensating
 DROP DATABASE. Retries can reuse that database and generate a new role/password.
-Concurrent first requests can both miss metadata; a duplicate metadata insert
-can fail one transaction rather than automatically returning the winning row.
-Do not describe get-or-create as fully atomic or assume an existing database
-is empty before ownership is transferred.
+Concurrent first requests can both miss metadata; the lock and second lookup
+ensure they return the same winning credentials. The session lock spans CREATE
+DATABASE and the transaction and is released with a separate bounded cleanup
+context. On cancellation or unlock failure, discard the connection rather than
+returning a possibly locked session to the pool. Do not assume an existing
+database is empty before ownership transfer.
 
 ### Dragonfly provisioning sequence
 
@@ -176,6 +187,11 @@ For the same normalized instance name `example`:
 2. Choose username `user_example`, namespace `ns_example`, a fresh password
    using the same 16-random-byte helper as PostgreSQL, and a UTC creation time.
    Marshal the metadata JSON before issuing backend mutations.
+   Reserve it with SETNX at `instance-pending:example`, then always reload and
+   use the winning reservation. Recheck published metadata before ACL creation.
+   Reservations have no TTL and are deliberately retained after publication:
+   a paused replica or retry must never generate a second ACL password after
+   a lock lease expires. They are excluded from instance listings.
 3. Send the following command as separate Redis protocol arguments:
 
    ```text
@@ -187,7 +203,7 @@ For the same normalized instance name `example`:
    permissions, and allows all key patterns within that namespace. The broker
    issues no separate CREATE NAMESPACE command or numbered-database allocation;
    namespace assignment is part of the Dragonfly ACL operation.
-4. Save JSON using `SETNX instance:example <json>` with no expiry. It includes
+4. Save the reserved JSON using `SETNX instance:example <json>` with no expiry. It includes
    `namespace`, `username`, plaintext `password`, `created_at`, and an empty
    `uri` field; instance name, host, and port are omitted by JSON tags. If the
    key already exists, reload and return that record instead of overwriting it.
@@ -197,11 +213,13 @@ For the same normalized instance name `example`:
    database 0. The metadata client's database still comes from `DRAGONFLY_URI`.
 
 ACL creation and metadata storage have no shared transaction or cleanup step.
-A failed metadata write can leave an ACL user behind. Concurrent requests can
-both mutate the same deterministic ACL username with different generated
-passwords before one wins `SETNX`; the command sends no `resetpass` option.
-Do not assume `SETNX` serializes user creation or keeps ACL credentials and
-metadata consistent under every failure/race.
+A failed metadata write can leave an ACL user behind, but retries and concurrent
+replicas use the same reserved credentials and idempotently resume provisioning.
+Return credentials only after ACL creation and metadata publication succeed.
+The command sends no `resetpass` option; existing published credentials are never
+rotated. Keep reservations with the metadata in backups. Do not delete/expire
+them while replicas can be provisioning. All writers must use this reservation
+protocol; quiesce first-time provisioning when upgrading older broker replicas.
 
 Both adapters list their metadata registry rather than discovering all backend
 databases/users/namespaces. PostgreSQL sorts stored instance names; Dragonfly
@@ -238,3 +256,11 @@ Do not invoke infra deployment scripts as validation. Report exactly which
 checks ran, whether adapter integration tests ran, and any toolchain, Docker,
 or network limitations. Documentation-only changes need a diff/whitespace
 review rather than Go builds or database tests.
+
+Without Docker, explicitly set disposable loopback `TEST_DATABASE_URL` and
+`TEST_DRAGONFLY_URL` to run the same full adapter suite against native processes.
+PostgreSQL tests create/drop their own metadata database and provisioned roles/DBs.
+Dragonfly tests require an empty broker registry and remove their metadata,
+reservations, and ACL users. Ordinary Redis is insufficient. Never use production
+backends. Tests cover concurrent startup/provisioning, canceled lock acquisition,
+migration rollback, and retry after an ACL succeeds but metadata publication fails.

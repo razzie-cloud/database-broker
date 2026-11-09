@@ -94,12 +94,36 @@ func (d *dragonflyAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 	if err != nil {
 		return nil, fmt.Errorf("marshal instance data: %w", err)
 	}
+	// Reserve canonical credentials before any ACL mutation. Keep this reservation
+	// even after publication: a paused/crashed replica must never resume using a
+	// newly generated password. SET NX acts as a shared, durable first-writer
+	// election without an expiring lock that could admit stale provisioning work.
+	stage = "reserve_credentials"
+	reservation := "instance-pending:" + instanceName
+	if err := d.client.SetNX(ctx, reservation, string(data), 0).Err(); err != nil {
+		return nil, fmt.Errorf("reserve instance data: %w", err)
+	}
+	reserved, err := d.client.Get(ctx, reservation).Result()
+	if err != nil {
+		return nil, fmt.Errorf("load reserved instance data: %w", err)
+	}
+	instance, err = d.unmarshalInstance(instanceName, reserved)
+	if err != nil {
+		return nil, err
+	}
+	// A peer may have completed provisioning while we reserved/read credentials.
+	stage = "reload_metadata"
+	if published, err := d.getInstance(ctx, instanceName); err != nil {
+		return nil, err
+	} else if published != nil {
+		return published, nil
+	}
 	stage = "create_acl_user"
-	if err := d.createUser(ctx, user, pass, ns); err != nil {
+	if err := d.createUser(ctx, instance.Username, instance.Password, instance.Namespace); err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 	stage = "save_metadata"
-	ok, err := d.client.SetNX(ctx, "instance:"+instanceName, string(data), 0).Result()
+	ok, err := d.client.SetNX(ctx, "instance:"+instanceName, reserved, 0).Result()
 	if err != nil {
 		return nil, fmt.Errorf("save instance data: %w", err)
 	}

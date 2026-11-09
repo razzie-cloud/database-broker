@@ -59,9 +59,35 @@ go test ./internal/config ./internal/broker ./internal/router ./internal/util
 ```
 
 The full `go test ./...` suite starts disposable PostgreSQL and Dragonfly
-containers through testcontainers and requires a local Docker daemon. It does
-not skip adapter tests when Docker is unavailable. See [AGENTS.md](../AGENTS.md)
+containers through testcontainers by default. Alternatively, set
+`TEST_DATABASE_URL` and `TEST_DRAGONFLY_URL` to disposable loopback native backends.
+PostgreSQL tests create/drop databases and roles; Dragonfly tests require an
+empty broker registry and clean up their instance metadata, reservations, and ACL
+users. They do not skip adapter tests when Docker is unavailable. See [AGENTS.md](../AGENTS.md)
 for provisioning internals, backend constraints, and verification guidance.
+
+## Multiple replicas
+
+Replicas must share the same backend URIs, metadata database, and credentials.
+PostgreSQL migrations take a transaction advisory lock before version discovery.
+First-time PostgreSQL provisioning takes a per-instance session advisory lock,
+rechecks metadata, and uses the same pinned connection for database creation and
+the credentials/ownership transaction. Concurrent callers receive the saved
+credentials; cancellation releases or discards the locked connection.
+
+Dragonfly reserves one set of random credentials atomically under
+`instance-pending:<name>` before creating its ACL user, then publishes the reserved
+record under `instance:<name>`. Concurrent requests and retries apply the same
+credentials, including after a crash between ACL creation and publication. The
+reservation is deliberately retained without expiry, is excluded from listings,
+and must be backed up alongside published metadata. Existing published instances
+retain their credentials and are read without ACL changes.
+
+During an upgrade from older broker images, quiesce first-time provisioning until
+all replicas use these coordination protocols. Schema changes still need to be
+compatible with the code running during a rolling upgrade. Backend availability
+and durability depend on PostgreSQL/Dragonfly themselves; this does not add
+backend replication or persistence.
 
 ## Publish an image
 

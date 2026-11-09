@@ -14,7 +14,11 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func startPostgresContainer(t *testing.T) (testcontainers.Container, string, int) {
+func startPostgresContainer(t *testing.T) (func(), string, int) {
+	t.Helper()
+	if uri, port, stop := localPostgres(t); uri != "" {
+		return stop, uri, port
+	}
 	req := testcontainers.ContainerRequest{
 		Image:        "postgres:latest",
 		ExposedPorts: []string{"5432/tcp"},
@@ -37,13 +41,13 @@ func startPostgresContainer(t *testing.T) (testcontainers.Container, string, int
 	require.NoError(t, err)
 	port := portStr.Int()
 	uri := fmt.Sprintf("postgres://admin:adminpass@%s:%d/postgres?sslmode=disable", host, port)
-	return container, uri, port
+	return func() { _ = container.Terminate(context.Background()) }, uri, port
 }
 
 func TestPostgresAdapterIntegration(t *testing.T) {
 	ctx := context.Background()
-	container, uri, _ := startPostgresContainer(t)
-	defer container.Terminate(ctx)
+	stop, uri, _ := startPostgresContainer(t)
+	defer stop()
 
 	adapter, err := New(uri)
 	require.NoError(t, err)
@@ -71,7 +75,7 @@ func TestPostgresAdapterIntegration(t *testing.T) {
 	_, err = adapter.GetOrCreateInstance(ctx, "foo")
 	require.NoError(t, err)
 	// The old error-only instrumenter leaked this statement's password.
-	err = createUser(ctx, adapter.(*postgresAdapter).repo, foo.(*Instance).Username, "logging-sentinel-secret")
+	err = createUser(ctx, adapter.(*postgresAdapter).db, foo.(*Instance).Username, "logging-sentinel-secret")
 	require.Error(t, err)
 	require.Empty(t, output.String(), "existing lookups and low-level SQL failures must not log")
 

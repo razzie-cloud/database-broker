@@ -12,7 +12,11 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func startDragonflyContainer(t *testing.T) (testcontainers.Container, string, int) {
+func startDragonflyContainer(t *testing.T) (func(), string, int) {
+	t.Helper()
+	if uri, port, stop := localDragonfly(t); uri != "" {
+		return stop, uri, port
+	}
 	req := testcontainers.ContainerRequest{
 		Image:        "docker.dragonflydb.io/dragonflydb/dragonfly:latest",
 		ExposedPorts: []string{"6379/tcp"},
@@ -33,13 +37,13 @@ func startDragonflyContainer(t *testing.T) (testcontainers.Container, string, in
 	require.NoError(t, err)
 	port := portStr.Int()
 	uri := fmt.Sprintf("redis://:adminpass@%s:%d/0", host, port)
-	return container, uri, port
+	return func() { _ = container.Terminate(context.Background()) }, uri, port
 }
 
 func TestDragonflyAdapterIntegration(t *testing.T) {
 	ctx := context.Background()
-	container, uri, _ := startDragonflyContainer(t)
-	defer container.Terminate(ctx)
+	stop, uri, _ := startDragonflyContainer(t)
+	defer stop()
 
 	adapter, err := New(uri)
 	require.NoError(t, err)
