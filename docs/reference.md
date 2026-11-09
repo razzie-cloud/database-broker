@@ -171,7 +171,7 @@ git push origin "$RELEASE_TAG"
 
 The tagged commit must include `.github/workflows/publish-image.yml`. Creating
 a new tag through GitHub's release UI also triggers the workflow. Tags in the
-parent razcloud repository do not trigger service builds.
+parent Razzie Cloud repository do not trigger service builds.
 
 The image tag exactly matches the Git tag, including any `v` prefix; no `latest`
 alias is added. Use Docker-compatible tags: 1–128 ASCII letters, digits,

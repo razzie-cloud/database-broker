@@ -3,7 +3,7 @@
 ## Scope and repository workflow
 
 This directory is the `github.com/razzie-cloud/database-broker` Go 1.27 module
-and a Git submodule of razcloud. Run Go commands here; the parent has no Go
+and a Git submodule of Razzie Cloud. Run Go commands here; the parent has no Go
 module. Keep broker code, tests, Docker files, and documentation in this
 repository. Follow the parent `AGENTS.md` for submodule workflow and preserve
 unrelated changes in sibling components.
