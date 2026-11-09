@@ -59,7 +59,7 @@ func startValkey(t *testing.T) string {
 		container, err := testcontainers.GenericContainer(t.Context(), testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
 				Image: "valkey/valkey:9.1.0", ExposedPorts: []string{"6379/tcp"},
-				Cmd:        []string{"valkey-server", "--requirepass", "adminpass", "--databases", "16"},
+				Cmd:        []string{"sh", "-ec", `umask 077; printf 'user default on >adminpass ~* &* +@all\n' > /data/users.acl; exec valkey-server --aclfile /data/users.acl --databases 16`},
 				WaitingFor: wait.ForListeningPort("6379/tcp"),
 			}, Started: true,
 		})
@@ -230,6 +230,52 @@ func TestConcurrentProvisioning(t *testing.T) {
 	names, err := peers[0].GetInstances(ctx)
 	require.NoError(t, err)
 	require.Len(t, names, 6)
+}
+
+func TestACLPersistence(t *testing.T) {
+	uri := startValkey(t)
+	v := newAdapter(t, uri)
+	if !v.persistACL {
+		t.Skip("requires a disposable Valkey server with aclfile configured")
+	}
+	ctx := t.Context()
+	// A failed ACL checkpoint must leave only the canonical reservation so a
+	// different replica can retry without returning credentials that vanish.
+	failed := newAdapter(t, uri)
+	failed.client.AddHook(failACLSave{})
+	_, err := failed.GetOrCreateInstance(ctx, "durable")
+	require.ErrorIs(t, err, errInjected)
+	require.Zero(t, v.client.Exists(ctx, instancePrefix+"durable").Val())
+	reserved, err := v.client.Get(ctx, pendingPrefix+"durable").Result()
+	require.NoError(t, err)
+	canonical, err := v.decode("durable", reserved)
+	require.NoError(t, err)
+	i, err := v.GetOrCreateInstance(ctx, "durable")
+	require.NoError(t, err)
+	require.Equal(t, canonical.GetURI(), i.GetURI())
+
+	// Loading the file must restore the same password and database restrictions.
+	require.NoError(t, v.client.ACLDelUser(ctx, canonical.Username).Err())
+	require.NoError(t, v.client.Do(ctx, "ACL", "LOAD").Err())
+	client := newClient(t, i.GetURI())
+	require.NoError(t, client.Set(ctx, "proof", "value", 0).Err())
+	require.ErrorContains(t, client.Do(ctx, "SELECT", v.metadataDB).Err(), "NOPERM")
+	require.ErrorContains(t, client.Publish(ctx, "channel", "value").Err(), "NOPERM")
+}
+
+type failACLSave struct{}
+
+func (failACLSave) DialHook(next redis.DialHook) redis.DialHook { return next }
+func (failACLSave) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+func (failACLSave) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if cmd.Name() == "acl" && strings.EqualFold(fmt.Sprint(cmd.Args()[1]), "save") {
+			return errInjected
+		}
+		return next(ctx, cmd)
+	}
 }
 
 var errInjected = errors.New("injected provisioning failure")

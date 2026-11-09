@@ -31,6 +31,7 @@ type valkeyAdapter struct {
 	metadataDB int
 	databases  int
 	admin      string
+	persistACL bool
 }
 
 func New(uri string) (adapter.Interface, error) {
@@ -78,6 +79,11 @@ func (v *valkeyAdapter) initialize(ctx context.Context) error {
 	if err != nil || v.databases < 2 || v.metadataDB < 0 || v.metadataDB >= v.databases {
 		return errors.New("valkey requires at least two databases and a valid metadata database")
 	}
+	config, err = v.client.ConfigGet(ctx, "aclfile").Result()
+	if err != nil {
+		return fmt.Errorf("read valkey ACL file configuration: %w", err)
+	}
+	v.persistACL = config["aclfile"] != ""
 	v.admin, err = v.client.Do(ctx, "ACL", "WHOAMI").Text()
 	if err != nil {
 		return fmt.Errorf("read valkey admin identity: %w", err)
@@ -174,6 +180,14 @@ func (v *valkeyAdapter) GetOrCreateInstance(ctx context.Context, name string) (r
 	).Err()
 	if err != nil {
 		return nil, fmt.Errorf("create valkey user: %w", err)
+	}
+	// ACLs are separate from RDB/AOF data. Persist them before publishing
+	// credentials so a restart cannot leave metadata pointing at a missing user.
+	if v.persistACL {
+		stage = "save_acl"
+		if err := v.client.Do(ctx, "ACL", "SAVE").Err(); err != nil {
+			return nil, fmt.Errorf("save valkey ACLs: %w", err)
+		}
 	}
 	stage = "save_metadata"
 	ok, err := v.client.SetNX(ctx, instancePrefix+name, reserved, 0).Result()

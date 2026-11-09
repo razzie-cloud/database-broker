@@ -48,9 +48,9 @@ database. Do not run independent broker registries on different databases of
 the same server, or create unmanaged users/data in its application databases.
 The `user_` username prefix is reserved for broker-managed accounts.
 
-The administrative account needs INFO, CONFIG GET databases, ACL WHOAMI,
-ACL SETUSER, and metadata read/write/scan/transaction permissions. Keep it
-password-protected. The broker leaves its permissions unchanged, including
+The administrative account needs INFO, CONFIG GET databases/aclfile, ACL WHOAMI,
+ACL SETUSER, ACL SAVE when an ACL file is configured, and metadata
+read/write/scan/transaction permissions. Keep it password-protected. The broker leaves its permissions unchanged, including
 pub/sub. Every provisioned user has a reset ACL with `db=<allocated-number>`,
 all key patterns within that database, and normal data, connection, transaction,
 and scripting commands. Administrative and dangerous commands, shared function
@@ -69,9 +69,13 @@ WATCH/MULTI/EXEC atomically reserves a database and canonical credentials before
 ACL creation. Reservations and ownership never expire, including on failure;
 retries resume with the same database/password after ACL or publication errors.
 Listings include only published records. There is no deletion or reclamation API.
-Back up all three metadata structures together and retain the server's ACL state
-using operator-managed ACL persistence. Restoring data without the corresponding
-ACLs requires operator recovery; existing lookups do not recreate accounts.
+Back up all three metadata structures together with the server's ACL state.
+When `aclfile` is configured at broker startup, provisioning runs `ACL SAVE` after
+setting the user and before publishing credentials. A failed ACL save leaves the
+canonical reservation for retry and does not publish the instance. Without an
+ACL file, ACLs remain in memory; configure both data persistence and a writable
+ACL file for durable deployments. Restoring data without corresponding ACLs
+requires operator recovery; existing lookups do not recreate accounts.
 
 ## API Usage
 

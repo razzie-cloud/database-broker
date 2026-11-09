@@ -228,8 +228,8 @@ protocol; quiesce first-time provisioning when upgrading older broker replicas.
 ### Valkey provisioning sequence
 
 `internal/adapter/valkey/valkey.go` requires standalone Valkey 9.1.0+ and rejects
-other/older servers using INFO's `valkey_version`. It reads CONFIG GET databases
-and ACL WHOAMI at startup. The configured database stores metadata and is never
+other/older servers using INFO's `valkey_version`. It reads CONFIG GET for
+`databases` and `aclfile`, plus ACL WHOAMI at startup. The configured database stores metadata and is never
 assigned to tenants; all replicas must use the same metadata database. Require
 a dedicated, initially empty server and reserve the `user_` username prefix.
 
@@ -241,7 +241,9 @@ transaction/scripting categories, excluding dangerous/admin/module/shared
 function operations. Always deny `@pubsub` and reset all channel permissions:
 pub/sub ignores numbered databases. Never change the administrator's ACL, and
 reject tenant usernames that match it. Publish the reserved JSON with SETNX at
-`valkey:instance:<name>` only after ACL success. Retries use the same reservation;
+`valkey:instance:<name>` only after ACL success. When `aclfile` is configured,
+run ACL SAVE before publication; failures retain the reservation for retry.
+Keep the ACL file with RDB/AOF data in backups. Retries use the same reservation;
 published lookups retain credentials. Return redis/rediss URIs selecting the
 allocated database and preserving TLS. Exhaustion fails without creating a user.
 See [Valkey operations](docs/reference.md#valkey) for capacity and persistence.
