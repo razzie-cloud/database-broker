@@ -19,22 +19,47 @@ import (
 
 // probe only checks denied routes and never performs credential provisioning.
 func probe(args []string) error {
-	var err error
-	for attempt := range 5 {
-		err = probeOnce(args)
+	wait := 40 * time.Second
+	for i, arg := range args {
+		value := ""
+		if arg == "--max-wait" {
+			if i+1 >= len(args) {
+				return errors.New("invalid probe deadline")
+			}
+			value = args[i+1]
+		} else if strings.HasPrefix(arg, "--max-wait=") {
+			value = strings.TrimPrefix(arg, "--max-wait=")
+		} else {
+			continue
+		}
+		var err error
+		wait, err = time.ParseDuration(value)
+		if err != nil || wait <= 0 || wait > 15*time.Minute {
+			return errors.New("invalid probe deadline")
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	for attempt := 0; ; attempt++ {
+		err := probeOnce(ctx, args)
 		if err == nil {
 			return nil
 		}
-		if attempt < 4 {
-			time.Sleep(time.Duration(200*(1<<attempt)) * time.Millisecond)
+		timer := time.NewTimer(time.Duration(200*(1<<min(attempt, 4))) * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return err
+		case <-timer.C:
 		}
 	}
-	return err
 }
-func probeOnce(args []string) error {
+func probeOnce(ctx context.Context, args []string) error {
 	bad := errors.New("broker enforcement probe failed")
 	f := flag.NewFlagSet("probe", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
+	f.Duration("max-wait", 40*time.Second, "maximum readiness wait")
 	origin := f.String("origin", "", "broker HTTPS origin")
 	caFile := f.String("ca-file", "", "CA file")
 	addresses := f.String("addresses", "", "comma separated replica IP:port addresses")
@@ -99,7 +124,8 @@ func probeOnce(args []string) error {
 			tests = tests[:1]
 		}
 		for _, test := range tests {
-			resp, e := c.Get(*origin + test.path)
+			request, _ := http.NewRequestWithContext(ctx, http.MethodGet, *origin+test.path, nil)
+			resp, e := c.Do(request)
 			if e != nil {
 				transport.CloseIdleConnections()
 				return bad
@@ -121,7 +147,8 @@ func probeOnce(args []string) error {
 			if e != nil || net.ParseIP(host) == nil {
 				return bad
 			}
-			resp, e := c.Get("http://" + address + "/readyz")
+			request, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+"/readyz", nil)
+			resp, e := c.Do(request)
 			if e != nil {
 				return bad
 			}

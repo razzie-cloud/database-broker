@@ -23,6 +23,9 @@ func main() {
 	}
 }
 func run(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) > 0 && args[0] == "validate-tls" {
+		return validateTLS(args[1:], stdin)
+	}
 	if len(args) > 0 && args[0] == "probe" {
 		return probe(args[1:])
 	}

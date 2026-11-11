@@ -86,3 +86,10 @@ Startup rejects that listener in token mode. Normal production uses HTTPS port
 an explicit list of broker replica IP:port addresses, preserving the configured
 origin for certificate validation. An optional mounted app token exercises a
 forbidden pair and listing. It never calls a successful provisioning endpoint.
+
+The deployment preflight also uses `/broker-token validate-tls --hostname <name>`
+with public JSON `{ "ca": "PEM", "cert": "PEM chain" }` on stdin. It verifies
+certificate validity, hostname, server usage and chain trust without receiving
+any private key. The server verifies private-key matching before backend startup.
+Replica probes retry readiness up to a bounded --max-wait (at most 15 minutes),
+with each HTTP request bounded by both the overall deadline and its own timeout.
