@@ -7,7 +7,11 @@ See the [README](../README.md) for the local quickstart.
 - [Image publishing](#publish-an-image), [health probes](#health-probes), and [logging](#logging)
 
 ## Configuration
-Configuration uses environment variables or CLI flags; there is no configuration-file loader.
+Configuration uses environment variables or CLI flags. The authentication policy
+is a separate strict YAML file. Token mode is the default and requires a policy,
+expected deployment ID and mounted versioned key files; see
+[authentication and TLS](authentication.md) for all auth, CLI, overlap and listener
+settings. Explicit none mode skips those files and retains the legacy API.
 At least one backend URI is needed to provision instances. Set:
 - `SERVICE_PORT`: Port for the broker API server (default: `8080`)
 - `POSTGRES_URI`: Connection URI for PostgreSQL (e.g. `postgres://admin:adminpass@postgres:5432/broker?sslmode=disable`)
@@ -90,7 +94,9 @@ requires operator recovery; existing lookups do not recreate accounts.
 
 ## API Usage
 
-The broker exposes a RESTful API for managing database instances:
+The broker exposes these credential APIs. In token mode, supply exactly one
+client/token parameter and an allowed adapter/instance pair. Listing is denied.
+Credential responses have Cache-Control: no-store in both modes.
 
 * **GET** `/v1/instances/{adapter_name}`
 
@@ -107,7 +113,7 @@ The broker exposes a RESTful API for managing database instances:
 ## Development and checks
 
 Use Go 1.27. For a native run, set `POSTGRES_URI`, `DRAGONFLY_URI`, and/or `VALKEY_URI` to
-backends reachable from the host, then run `go run ./cmd/database-broker`. The
+backends reachable from the host, then select auth configuration (or explicit AUTH_MODE=none for isolated legacy tests) and run `go run ./cmd/database-broker`. The
 PostgreSQL account needs database/role creation privileges and an existing
 metadata database. Dragonfly needs administrative ACL permissions; ordinary
 Redis does not support its namespace provisioning. Use an explicit `6379` port.
@@ -204,7 +210,7 @@ checks log dependency failure and recovery transitions without raw backend error
 With no configured backends, liveness succeeds and readiness returns 503.
 
 Use these endpoints directly on the private backend port. Keep public ingress
-and authentication rules in place. Container health checks use `/readyz` on
+and authentication rules in place. Container health checks use the loopback HEALTH_PORT with TLS, otherwise `/readyz` on
 `SERVICE_PORT` (default 8080).
 
 ## Logging

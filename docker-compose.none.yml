@@ -1,0 +1,9 @@
+# Explicit opt-out, without development policy/key/token resources.
+services:
+  broker:
+    volumes: !reset []
+    environment:
+      AUTH_MODE: none
+      AUTH_POLICY_FILE: ""
+      AUTH_DEPLOYMENT_ID: ""
+      AUTH_KEY_FILES: ""

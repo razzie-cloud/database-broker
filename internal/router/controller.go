@@ -85,6 +85,9 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		Error string `json:"error"`
 	}
 	resp.Error = http.StatusText(code)
+	if code < 500 {
+		resp.Error = err.Error()
+	}
 	writeJSON(w, code, resp)
 }
 

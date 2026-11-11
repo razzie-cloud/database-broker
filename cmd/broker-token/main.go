@@ -23,6 +23,9 @@ func main() {
 	}
 }
 func run(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) > 0 && args[0] == "probe" {
+		return probe(args[1:])
+	}
 	bad := errors.New("invalid command")
 	if len(args) == 0 {
 		return bad

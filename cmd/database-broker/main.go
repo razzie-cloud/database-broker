@@ -96,7 +96,29 @@ func run() error {
 	}
 	slog.Info("Server listening", "event", "server.listening", "address", addr, "adapters", adapters)
 	server := &http.Server{Addr: addr, Handler: r, ErrorLog: logging.ServerLogger(), ReadHeaderTimeout: 5 * time.Second, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
+	if cfg.LegacyHTTPPort != 0 {
+		legacy := &http.Server{Addr: fmt.Sprintf(":%d", cfg.LegacyHTTPPort), Handler: r, ReadHeaderTimeout: 5 * time.Second, ErrorLog: logging.ServerLogger()}
+		defer legacy.Close()
+		go func() {
+			if err := legacy.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("Legacy listener failed", "event", "server.legacy_listener_failed")
+				server.Close()
+			}
+		}()
+	}
 	if cfg.TLSCertFile != "" {
+		probe := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", cfg.HealthPort), ReadHeaderTimeout: 5 * time.Second, ErrorLog: logging.ServerLogger(), Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !monitor.Handle(w, r) {
+				http.NotFound(w, r)
+			}
+		})}
+		defer probe.Close()
+		go func() {
+			if err := probe.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("Health listener failed", "event", "health.listener_failed")
+				server.Close()
+			}
+		}()
 		return logging.Wrap("serve", server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile))
 	}
 	return logging.Wrap("serve", server.ListenAndServe())

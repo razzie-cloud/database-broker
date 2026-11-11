@@ -1,0 +1,13 @@
+version: 1
+deployment_id: broker-development
+key_id: dev1
+clients:
+  example:
+    generation: 1
+    allow:
+      - adapter: postgres
+        instance: example
+      - adapter: redis
+        instance: example
+      - adapter: valkey
+        instance: example

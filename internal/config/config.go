@@ -9,6 +9,8 @@ import (
 )
 
 type Config struct {
+	LegacyHTTPPort        int    `arg:"--legacy-http-port,env:LEGACY_HTTP_PORT"`
+	HealthPort            int    `arg:"--health-port,env:HEALTH_PORT" default:"8081"`
 	AuthMode              string `arg:"--auth-mode,env:AUTH_MODE" default:"token"`
 	AuthPolicyFile        string `arg:"--auth-policy-file,env:AUTH_POLICY_FILE"`
 	AuthDeploymentID      string `arg:"--auth-deployment-id,env:AUTH_DEPLOYMENT_ID"`

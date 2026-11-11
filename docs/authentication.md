@@ -65,3 +65,24 @@ Back up Swarm state. Losing the master requires a new key version and token
 redistribution; it does not require recreating application databases. Revoking a
 broker token does not rotate database credentials already returned. Docker control
 plane administrators can schedule tasks with access to secrets and remain trusted.
+
+`/broker-start` is a separate startup adapter for legacy RazChess and GeoIP.
+It uses bounded discovery and verified TLS, reads a mounted token and CA, validates
+the returned Redis URI and PINGs the backend before exec of the original app with
+`--redis`. Discovery/authentication failure exits with a static diagnostic. It
+refuses Redis argument overrides and preserves other arguments after `--`.
+It bypasses upstream discovery code that logs raw errors and can choose memory on
+failure. The Redis URI exists in runtime arguments; the broker token does not.
+The broker image provides this binary for copying onto upstream image layers.
+
+With TLS configured, private probes use the separate loopback HTTP HEALTH_PORT
+(default 8081). Provisioning routes never exist on that listener. During an
+already-tokenless migration only, explicit AUTH_MODE=none plus LEGACY_HTTP_PORT
+can retain the original HTTP discovery port while new consumers move to TLS.
+Startup rejects that listener in token mode. Normal production uses HTTPS port
+8443; local isolated development may use HTTP port 8080.
+
+`/broker-token probe` verifies TLS and expected 401/403/no-store responses against
+an explicit list of broker replica IP:port addresses, preserving the configured
+origin for certificate validation. An optional mounted app token exercises a
+forbidden pair and listing. It never calls a successful provisioning endpoint.

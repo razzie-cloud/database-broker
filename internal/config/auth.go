@@ -36,6 +36,15 @@ func (c *Config) Authentication() (*auth.Verifier, error) {
 	return auth.NewVerifier(p, keys)
 }
 func (c *Config) ValidateTLS() error {
+	if c.ServicePort < 1 || c.ServicePort > 65535 || c.HealthPort < 1 || c.HealthPort > 65535 || c.LegacyHTTPPort < 0 || c.LegacyHTTPPort > 65535 {
+		return errors.New("invalid broker listener port")
+	}
+	if c.LegacyHTTPPort != 0 && (c.AuthMode != "none" || c.TLSCertFile == "" || c.LegacyHTTPPort == c.ServicePort || c.LegacyHTTPPort == c.HealthPort) {
+		return errors.New("legacy HTTP listener requires explicit none mode and separate TLS listener")
+	}
+	if c.TLSCertFile != "" && c.ServicePort == c.HealthPort {
+		return errors.New("TLS and health listeners require distinct ports")
+	}
 	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
 		return errors.New("TLS certificate and key files must be configured together")
 	}
