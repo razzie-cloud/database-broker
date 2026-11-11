@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 
+	"github.com/razzie-cloud/database-broker/internal/auth"
 	"github.com/razzie-cloud/database-broker/internal/broker"
 	"github.com/razzie-cloud/database-broker/internal/logging"
 
@@ -13,9 +15,14 @@ import (
 
 type controller struct {
 	broker broker.Interface
+	auth   *auth.Verifier
 }
 
 func (ctrl *controller) listInstances(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if !ctrl.authorize(w, r) {
+		return
+	}
 	ctx := r.Context()
 	adapterName := chi.URLParam(r, "adapter_name")
 	instances, err := ctrl.broker.GetInstances(ctx, adapterName)
@@ -27,6 +34,10 @@ func (ctrl *controller) listInstances(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ctrl *controller) getInstance(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if !ctrl.authorize(w, r) {
+		return
+	}
 	ctx := r.Context()
 	adapterName := chi.URLParam(r, "adapter_name")
 	instanceName := chi.URLParam(r, "instance_name")
@@ -39,6 +50,10 @@ func (ctrl *controller) getInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ctrl *controller) getInstanceURI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if !ctrl.authorize(w, r) {
+		return
+	}
 	ctx := r.Context()
 	adapterName := chi.URLParam(r, "adapter_name")
 	instanceName := chi.URLParam(r, "instance_name")
@@ -69,6 +84,29 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var resp struct {
 		Error string `json:"error"`
 	}
-	resp.Error = err.Error()
+	resp.Error = http.StatusText(code)
 	writeJSON(w, code, resp)
+}
+
+func (ctrl *controller) authorize(w http.ResponseWriter, r *http.Request) bool {
+	if ctrl.auth == nil {
+		return true
+	}
+	// ParseQuery rejects malformed escapes and semicolons instead of ignoring them.
+	if len(r.URL.RawQuery) > 2048 {
+		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		return false
+	}
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(q["client"]) != 1 || len(q["token"]) != 1 || !ctrl.auth.Authenticate(q.Get("client"), q.Get("token")) {
+		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		return false
+	}
+	client := q.Get("client")
+	logging.Fields(r.Context(), "client", client)
+	if !ctrl.auth.Allows(client, chi.URLParam(r, "adapter_name"), chi.URLParam(r, "instance_name")) || chi.URLParam(r, "instance_name") == "" {
+		writeJSON(w, 403, map[string]string{"error": "forbidden"})
+		return false
+	}
+	return true
 }

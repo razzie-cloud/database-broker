@@ -68,7 +68,8 @@ URI, so they must be reachable by the intended consumer.
 
 ## HTTP contract
 
-The broker currently has no authentication or authorization middleware. Keep
+The broker defaults to scoped token authentication. Read docs/authentication.md.
+Explicit AUTH_MODE=none retains legacy tokenless operation. Keep
 it on the internal network and use local backends for development requests.
 Both instance lookup endpoints can create databases/users and return secrets.
 Do not probe a deployed instance as a routine health or validation check.

@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter/dragonfly"
 	"github.com/razzie-cloud/database-broker/internal/adapter/postgres"
@@ -32,6 +34,13 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return logging.Wrap("config", err)
+	}
+	verifier, err := cfg.Authentication()
+	if err != nil {
+		return logging.Wrap("auth_config", err)
+	}
+	if cfg.AuthMode == "none" {
+		slog.Warn("Broker authentication disabled by explicit mode", "event", "broker.auth_mode", "mode", "none")
 	}
 	b := broker.New()
 	var checks []health.Check
@@ -70,7 +79,7 @@ func run() error {
 	monitor := health.New(checks...)
 	stopHealth := monitor.Start(context.Background())
 	defer stopHealth()
-	r := router.WithHealth(b, monitor)
+	r := router.WithAuth(b, monitor, verifier)
 	addr := fmt.Sprintf(":%d", cfg.ServicePort)
 	var adapters []string
 	if cfg.PostgresURI != "" {
@@ -86,6 +95,9 @@ func run() error {
 		slog.Warn("No backends configured; readiness will fail", "event", "broker.no_backends")
 	}
 	slog.Info("Server listening", "event", "server.listening", "address", addr, "adapters", adapters)
-	server := &http.Server{Addr: addr, Handler: r, ErrorLog: logging.ServerLogger()}
+	server := &http.Server{Addr: addr, Handler: r, ErrorLog: logging.ServerLogger(), ReadHeaderTimeout: 5 * time.Second, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
+	if cfg.TLSCertFile != "" {
+		return logging.Wrap("serve", server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile))
+	}
 	return logging.Wrap("serve", server.ListenAndServe())
 }

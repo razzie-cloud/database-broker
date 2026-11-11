@@ -54,3 +54,6 @@ can create databases and return secrets.
 See the [reference guide](docs/reference.md) for all settings, checks, operations,
 and image publishing, or [AGENTS.md](AGENTS.md) for provisioning internals and
 contributor guidance. Licensed under the [MIT License](LICENSE).
+
+See [scoped authentication and TLS](docs/authentication.md) before starting the broker.
+Authentication defaults to token mode; explicitly select AUTH_MODE=none only for legacy operation.

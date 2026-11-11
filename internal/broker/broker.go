@@ -3,15 +3,12 @@ package broker
 import (
 	"context"
 	"net/http"
-	"regexp"
-	"strings"
 	"sync"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter"
 	"github.com/razzie-cloud/database-broker/internal/logging"
+	"github.com/razzie-cloud/database-broker/internal/names"
 )
-
-var validInstanceName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
 type Interface interface {
 	RegisterAdapter(name string, adapter adapter.Interface)
@@ -34,37 +31,37 @@ func New() Interface {
 func (b *broker) RegisterAdapter(name string, adapter adapter.Interface) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.adapters[strings.ToLower(name)] = adapter
+	b.adapters[names.Adapter(name)] = adapter
 }
 
 func (b *broker) UnregisterAdapter(name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	delete(b.adapters, strings.ToLower(name))
+	delete(b.adapters, names.Adapter(name))
 }
 
 func (b *broker) GetInstances(ctx context.Context, adapterName string) ([]string, error) {
 	b.mu.RLock()
-	a, ok := b.adapters[strings.ToLower(adapterName)]
+	a, ok := b.adapters[names.Adapter(adapterName)]
 	b.mu.RUnlock()
 	if !ok {
 		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
 	}
-	logging.Fields(ctx, "adapter", strings.ToLower(adapterName))
+	logging.Fields(ctx, "adapter", names.Adapter(adapterName))
 	return a.GetInstances(ctx)
 }
 
 func (b *broker) GetOrCreateInstance(ctx context.Context, adapterName, instanceName string) (adapter.Instance, error) {
-	instanceName = strings.ToLower(instanceName)
-	if !validInstanceName.MatchString(instanceName) {
+	instanceName = names.Instance(instanceName)
+	if !names.ValidInstance(instanceName) {
 		return nil, newError("invalid instance name: %s", instanceName).WithStatusCode(http.StatusUnprocessableEntity)
 	}
 	b.mu.RLock()
-	a, ok := b.adapters[strings.ToLower(adapterName)]
+	a, ok := b.adapters[names.Adapter(adapterName)]
 	b.mu.RUnlock()
 	if !ok {
 		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
 	}
-	logging.Fields(ctx, "adapter", strings.ToLower(adapterName), "instance_name", instanceName[:min(len(instanceName), 128)])
+	logging.Fields(ctx, "adapter", names.Adapter(adapterName), "instance_name", instanceName[:min(len(instanceName), 128)])
 	return a.GetOrCreateInstance(ctx, instanceName)
 }

@@ -9,6 +9,7 @@ import (
 )
 
 func TestLoad_FromEnv(t *testing.T) {
+	t.Setenv("AUTH_MODE", "none")
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
@@ -27,6 +28,7 @@ func TestLoad_FromEnv(t *testing.T) {
 }
 
 func TestLoad_FromArgs(t *testing.T) {
+	t.Setenv("AUTH_MODE", "none")
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
@@ -61,6 +63,7 @@ func TestLoad_FromArgs(t *testing.T) {
 }
 
 func TestLoad_ValkeyPasswordFile(t *testing.T) {
+	t.Setenv("AUTH_MODE", "none")
 	origArgs := os.Args
 	t.Cleanup(func() { os.Args = origArgs })
 	os.Args = []string{"cmd"}
@@ -90,6 +93,7 @@ func TestLoad_ValkeyPasswordFile(t *testing.T) {
 }
 
 func TestLoad_PostgresPasswordFile(t *testing.T) {
+	t.Setenv("AUTH_MODE", "none")
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 
@@ -116,6 +120,7 @@ func TestLoad_PostgresPasswordFile(t *testing.T) {
 }
 
 func TestLoad_DragonflyPasswordFile(t *testing.T) {
+	t.Setenv("AUTH_MODE", "none")
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
 

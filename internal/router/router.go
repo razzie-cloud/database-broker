@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 
+	"github.com/razzie-cloud/database-broker/internal/auth"
 	"github.com/razzie-cloud/database-broker/internal/broker"
 	"github.com/razzie-cloud/database-broker/internal/health"
 	"github.com/razzie-cloud/database-broker/internal/logging"
@@ -16,7 +17,12 @@ func New(broker broker.Interface) http.Handler {
 
 // WithHealth keeps probes outside access logging and API middleware.
 func WithHealth(broker broker.Interface, monitor *health.Monitor) http.Handler {
-	ctrl := &controller{broker: broker}
+	return WithAuth(broker, monitor, nil)
+}
+
+// WithAuth uses nil only for explicitly selected legacy mode.
+func WithAuth(broker broker.Interface, monitor *health.Monitor, verifier *auth.Verifier) http.Handler {
+	ctrl := &controller{broker: broker, auth: verifier}
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
