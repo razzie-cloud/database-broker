@@ -14,14 +14,14 @@ disabled for every provisioned Valkey user; the administrator retains access.
 
 ## Try it locally
 
-You need Git, Go 1.27, Python 3 and Docker with the Compose plugin. The included stack starts the
+You need Git, Go 1.27 and Docker with the Compose plugin. The included stack starts the
 broker, PostgreSQL, Dragonfly, and Valkey with local development credentials.
 Ports 5432, 6379, 6380, and 8080 must be free.
 
 ```sh
 git clone https://github.com/razzie-cloud/database-broker.git
 cd database-broker
-python3 scripts/prepare-dev-auth.py
+go run scripts/prepare-dev-auth.go
 docker compose up --build -d
 # Save the returned database URI privately; never log it.
 umask 077
