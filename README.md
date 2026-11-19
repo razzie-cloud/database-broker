@@ -54,6 +54,9 @@ reserved for broker metadata). See [Valkey configuration](docs/reference.md#valk
 | `/v1/instances/{adapter}/{name}/uri` | Get or create an instance; return its connection URI |
 
 Names accept letters, digits, and underscores and are normalized to lowercase.
+New PostgreSQL instances are limited to 50 ASCII bytes; longer creation requests
+return 422. Existing longer PostgreSQL names keep their stored credentials.
+Dragonfly and Valkey are unaffected.
 The API defaults to scoped token authentication: exact policy grants authorize
 get-or-create requests, and listing is denied in token mode. Keep the broker
 private and use verified TLS in production. Explicit AUTH_MODE=none preserves

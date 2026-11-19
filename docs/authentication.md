@@ -21,6 +21,11 @@ ASCII alphanumeric/underscore and case insensitive. Adapter names are case
 insensitive; redis is the dragonfly alias. Duplicate canonical grants, unknown
 fields, duplicate YAML keys and multiple documents are rejected.
 
+PostgreSQL grants from 51 through 128 bytes remain valid for existing instances.
+They cannot create new PostgreSQL instances: creation is limited to 50 ASCII
+bytes and returns 422 for longer names after authentication and authorization.
+Policy parsing and token generation do not query backends.
+
 Credential requests require exactly one `client` and `token` query parameter.
 Both JSON and URI endpoints authenticate before backend lookup/provisioning;
 listing is always forbidden to authenticated clients. Missing/invalid credentials

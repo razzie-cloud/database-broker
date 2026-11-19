@@ -87,6 +87,17 @@ func TestPolicyRejections(t *testing.T) {
 		t.Fatal("oversize")
 	}
 }
+
+func TestPostgresGrantNameLength(t *testing.T) {
+	for _, size := range []int{51, 128, 129} {
+		s := strings.Replace(fixture, "adapter: REDIS", "adapter: postgres", 1)
+		s = strings.Replace(s, "instance: Files", "instance: "+strings.Repeat("a", size), 1)
+		_, err := Parse(strings.NewReader(s), "test-deploy")
+		if (err == nil) != (size <= 128) {
+			t.Fatalf("PostgreSQL grant of %d bytes: %v", size, err)
+		}
+	}
+}
 func TestEnvelopeAndRotation(t *testing.T) {
 	p := policy(t, fixture)
 	key := bytes.Repeat([]byte{3}, 32)

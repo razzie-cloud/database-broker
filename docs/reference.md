@@ -98,6 +98,19 @@ The broker exposes these credential APIs. In token mode, supply exactly one
 client/token parameter and an allowed adapter/instance pair. Listing is denied.
 Credential responses have Cache-Control: no-store in both modes.
 
+Instance names accept ASCII letters, digits and underscores and are lowercased.
+New PostgreSQL names must be at most 50 bytes, keeping the generated role within
+PostgreSQL's 63-byte identifier limit. Both credential endpoints return 422 JSON
+`{"error":"instance name is too long to provision"}` for longer new names before
+creating any database, role or metadata. Existing longer names still resolve to
+their stored credentials; Dragonfly and Valkey have no new limit. Authentication
+and scope checks run first (401/403).
+
+During an upgrade, pause new PostgreSQL names above 50 bytes until every broker
+replica is updated; older replicas and rollbacks retain the unsafe creation
+behavior. No migration or credential rotation is needed. Inspect databases left
+by earlier failed provisioning separately; the broker does not delete them.
+
 * **GET** `/v1/instances/{adapter_name}`
 
   Returns a list of database instances for the specified adapter (`postgres`, `redis`, `dragonfly`, or `valkey`) in a JSON string array.

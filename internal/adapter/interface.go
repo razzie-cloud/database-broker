@@ -1,6 +1,11 @@
 package adapter
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrInstanceNameTooLong = errors.New("instance name is too long to provision")
 
 type Instance interface {
 	GetJSON() any

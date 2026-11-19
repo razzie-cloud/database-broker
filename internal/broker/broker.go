@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 
@@ -63,5 +64,9 @@ func (b *broker) GetOrCreateInstance(ctx context.Context, adapterName, instanceN
 		return nil, newError("adapter not found: %s", adapterName).WithStatusCode(http.StatusNotFound)
 	}
 	logging.Fields(ctx, "adapter", names.Adapter(adapterName), "instance_name", instanceName[:min(len(instanceName), 128)])
-	return a.GetOrCreateInstance(ctx, instanceName)
+	instance, err := a.GetOrCreateInstance(ctx, instanceName)
+	if errors.Is(err, adapter.ErrInstanceNameTooLong) {
+		return nil, newError("%s", adapter.ErrInstanceNameTooLong).WithStatusCode(http.StatusUnprocessableEntity)
+	}
+	return instance, err
 }

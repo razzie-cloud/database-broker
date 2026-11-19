@@ -6,9 +6,11 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/razzie-cloud/database-broker/internal/adapter"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -126,4 +128,72 @@ func TestPostgresAdapterIntegration(t *testing.T) {
 	// Check data not in foo
 	err = fooDB.QueryRowContext(ctx, `SELECT value FROM test WHERE value = 'bar-value'`).Scan(&fooVal)
 	require.Error(t, err)
+}
+
+func TestPostgresInstanceNameLimit(t *testing.T) {
+	stop, uri, _ := startPostgresContainer(t)
+	defer stop()
+	peer, err := New(uri)
+	require.NoError(t, err)
+	defer peer.Close()
+	pg := peer.(*postgresAdapter)
+	ctx := t.Context()
+
+	t.Run("50-byte names retain complete identifiers and authenticate", func(t *testing.T) {
+		for _, name := range []string{strings.Repeat("a", 49) + "a", strings.Repeat("a", 49) + "b"} {
+			created, err := pg.GetOrCreateInstance(ctx, name)
+			require.NoError(t, err)
+			instance := created.(*Instance)
+			require.Len(t, instance.Username, 63)
+			require.Len(t, instance.Database, 53)
+			saved, err := pg.GetInstance(ctx, name)
+			require.NoError(t, err)
+			require.Equal(t, instance.GetURI(), saved.GetURI())
+			app, err := sql.Open("pgx", instance.GetURI())
+			require.NoError(t, err)
+			require.NoError(t, app.PingContext(ctx))
+			require.NoError(t, app.Close())
+		}
+	})
+
+	t.Run("overlong new names create no resources", func(t *testing.T) {
+		snapshot := func() [3]string {
+			var state [3]string
+			require.NoError(t, pg.db.QueryRowContext(ctx, `SELECT
+ (SELECT json_agg(datname ORDER BY datname)::text FROM pg_database),
+ (SELECT json_agg(rolname ORDER BY rolname)::text FROM pg_roles),
+ (SELECT coalesce(json_agg(instances ORDER BY instance_name)::text, '[]') FROM instances)`).Scan(&state[0], &state[1], &state[2]))
+			return state
+		}
+		before := snapshot()
+		for _, name := range []string{
+			strings.Repeat("b", 51),
+			strings.Repeat("a", 58) + "a",
+			strings.Repeat("a", 58) + "b",
+			strings.Repeat("c", 128),
+		} {
+			instance, err := pg.GetOrCreateInstance(ctx, name)
+			require.Nil(t, instance)
+			require.ErrorIs(t, err, adapter.ErrInstanceNameTooLong)
+			require.Equal(t, before, snapshot(), "rejection must leave databases, roles and metadata unchanged")
+		}
+	})
+
+	t.Run("existing long lookup keys retain stored credentials", func(t *testing.T) {
+		created, err := pg.GetOrCreateInstance(ctx, "legacy")
+		require.NoError(t, err)
+		saved, err := pg.GetInstance(ctx, "legacy")
+		require.NoError(t, err)
+		name := strings.Repeat("d", 59)
+		_, err = pg.db.ExecContext(ctx, `UPDATE instances SET instance_name=$1 WHERE instance_name='legacy'`, name)
+		require.NoError(t, err)
+		expected := *saved.(*Instance)
+		expected.InstanceName = name
+		for _, lookup := range []func(context.Context, string) (adapter.Instance, error){pg.GetInstance, pg.GetOrCreateInstance} {
+			found, err := lookup(ctx, name)
+			require.NoError(t, err)
+			require.Equal(t, &expected, found)
+			require.Equal(t, created.GetURI(), found.GetURI())
+		}
+	})
 }

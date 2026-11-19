@@ -19,6 +19,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+// user_ + instance + _ + seven-character suffix must fit PostgreSQL's 63 bytes.
+const maxNewInstanceNameBytes = 50
+
 type postgresAdapter struct {
 	db      *sql.DB
 	adapter rel.Adapter
@@ -126,6 +129,10 @@ func (pg *postgresAdapter) GetOrCreateInstance(ctx context.Context, instanceName
 	}
 	if err != rel.ErrNotFound {
 		return nil, err
+	}
+	stage = "validate_instance_name"
+	if len(instanceName) > maxNewInstanceNameBytes {
+		return nil, adapter.ErrInstanceNameTooLong
 	}
 	dbName := "db_" + instanceName
 	dbUser := "user_" + instanceName + "_" + strings.ToLower(util.RandToken(4))

@@ -2,11 +2,15 @@ package broker_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter"
 	"github.com/razzie-cloud/database-broker/internal/broker"
+	"github.com/razzie-cloud/database-broker/internal/logging"
 
 	"github.com/razzie/mock"
 	"github.com/stretchr/testify/assert"
@@ -42,6 +46,39 @@ func TestGetOrCreateInstance_AdapterNotFound(t *testing.T) {
 	b := broker.New()
 	_, err := b.GetOrCreateInstance(context.Background(), "missing", "validname")
 	assertErrorStatusCode(t, err, http.StatusNotFound)
+}
+
+func TestGetOrCreateInstance_NameTooLong(t *testing.T) {
+	for _, err := range []error{
+		adapter.ErrInstanceNameTooLong,
+		logging.Wrap("validate_instance_name", fmt.Errorf("private backend detail: %w", adapter.ErrInstanceNameTooLong)),
+	} {
+		b := broker.New()
+		a, m := mock.Mock[adapter.Interface]()
+		name := strings.Repeat("a", 51)
+		m.On("GetOrCreateInstance", mock.Anything, name).Return(nil, err)
+		b.RegisterAdapter("postgres", a)
+		instance, got := b.GetOrCreateInstance(context.Background(), "postgres", name)
+		assert.Nil(t, instance)
+		assertErrorStatusCode(t, got, http.StatusUnprocessableEntity)
+		assert.EqualError(t, got, adapter.ErrInstanceNameTooLong.Error())
+		m.AssertExpectations(t)
+	}
+}
+
+func TestGetOrCreateInstance_PreservesOtherAdapterResults(t *testing.T) {
+	for _, backendErr := range []error{nil, errors.New("backend unavailable")} {
+		b := broker.New()
+		a, m := mock.Mock[adapter.Interface]()
+		i, _ := mock.Mock[adapter.Instance]()
+		name := strings.Repeat("a", 128)
+		m.On("GetOrCreateInstance", mock.Anything, name).Return(i, backendErr)
+		b.RegisterAdapter("dragonfly", a)
+		instance, err := b.GetOrCreateInstance(context.Background(), "dragonfly", strings.ToUpper(name))
+		assert.Equal(t, i, instance)
+		assert.Equal(t, backendErr, err)
+		m.AssertExpectations(t)
+	}
 }
 
 func assertErrorStatusCode(t *testing.T, err error, statusCode int) {

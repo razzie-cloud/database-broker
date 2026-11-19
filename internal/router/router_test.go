@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/razzie-cloud/database-broker/internal/adapter"
@@ -27,6 +28,7 @@ func TestFailureLogsTemplateAndStageWithoutBackendSecrets(t *testing.T) {
 	w := httptest.NewRecorder()
 	New(b).ServeHTTP(w, httptest.NewRequest("GET", "/v1/instances/postgres/example/uri?secret-query", nil))
 	assert.Equal(t, 500, w.Code)
+	assert.JSONEq(t, `{"error":"Internal Server Error"}`, w.Body.String())
 	assert.NotContains(t, output.String(), "secret")
 	var event map[string]any
 	assert.NoError(t, json.Unmarshal(bytes.TrimSpace(output.Bytes()), &event))
@@ -81,4 +83,20 @@ func TestRouter_GetInstanceURI(t *testing.T) {
 	assert.Equal(t, "mock://uri", w.Body.String())
 	imock.AssertExpectations(t)
 	bmock.AssertExpectations(t)
+}
+
+func TestRouter_WrappedInstanceNameError(t *testing.T) {
+	for _, suffix := range []string{"", "/uri"} {
+		b := broker.New()
+		a, m := mock.Mock[adapter.Interface]()
+		name := strings.Repeat("a", 51)
+		m.On("GetOrCreateInstance", mock.Anything, name).Return(nil, logging.Wrap("validate_instance_name", adapter.ErrInstanceNameTooLong))
+		b.RegisterAdapter("postgres", a)
+		w := httptest.NewRecorder()
+		New(b).ServeHTTP(w, httptest.NewRequest("GET", "/v1/instances/postgres/"+name+suffix, nil))
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		assert.JSONEq(t, `{"error":"instance name is too long to provision"}`, w.Body.String())
+		assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+		m.AssertExpectations(t)
+	}
 }

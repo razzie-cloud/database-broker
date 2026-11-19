@@ -89,6 +89,12 @@ Keep validation in the broker so every caller follows the same rules. Preserve
 request contexts through adapter operations. Existing instances must retain
 their credentials on repeated lookups. Coordinate API changes with consumers
 in access-gateway and infra, especially callers of the `/uri` endpoint.
+The PostgreSQL adapter additionally rejects new names above 50 ASCII bytes after
+the locked metadata miss, before generating credentials or creating resources.
+Existing longer records still resolve unchanged; other adapters and the policy's
+128-byte grant limit are unaffected. Translate the wrapped
+`adapter.ErrInstanceNameTooLong` with `errors.Is` into a direct broker 422 error;
+the router checks only the outer error's `StatusCode()`.
 
 ## Adapter and persistence rules
 
@@ -134,6 +140,8 @@ calling `GetOrCreateInstance`:
    bytes. Both use `crypto/rand` through `internal/util/rand.go`.
    Before generating these, pin a connection and acquire a per-instance session
    advisory lock, then re-read metadata and return the winner if it now exists.
+   After a locked miss, reject names above 50 bytes so the generated role fits
+   PostgreSQL's 63-byte identifier limit. Never apply that rule to stored records.
    Use that same connection for all remaining provisioning work. Connection loss
    must stop both the lock and further writes; never lock on one connection and
    provision on another.
