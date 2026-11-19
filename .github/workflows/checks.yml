@@ -1,0 +1,18 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l cmd internal)"
+      - run: go build ./...
+      - run: go vet ./...
+      # Adapter integration tests start disposable backends with testcontainers.
+      - run: go test -race ./...
+      - run: docker build -t database-broker:test .
