@@ -27,7 +27,12 @@ func startPostgresContainer(t *testing.T) (func(), string, int) {
 			"POSTGRES_USER":     "admin",
 			"POSTGRES_DB":       "postgres",
 		},
-		WaitingFor: wait.ForListeningPort("5432/tcp"),
+		// Initialization starts a temporary server before restarting PostgreSQL.
+		// Wait for both startups before checking the published port.
+		WaitingFor: wait.ForAll(
+			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+			wait.ForListeningPort("5432/tcp"),
+		),
 	}
 	container, err := testcontainers.GenericContainer(context.Background(), testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
